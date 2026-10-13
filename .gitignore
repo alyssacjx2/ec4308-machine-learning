@@ -1,0 +1,41 @@
+# ---- Data: never commit ----------------------------------------------------
+# The NEA pull alone is ~12M rows. GitHub rejects files >100MB and the repo
+# will become unusable for everyone. Data is reproduced by running R/01-03.
+data/**
+!data/**/
+!data/**/.gitkeep
+
+# Large intermediate model output (forecast matrices). Figures and tables in
+# output/figures and output/tables ARE tracked - they go in the report.
+output/forecasts/**
+!output/forecasts/
+!output/forecasts/.gitkeep
+
+# Extraction gap logs
+logs/**
+!logs/
+!logs/.gitkeep
+
+# ---- Credentials -----------------------------------------------------------
+.Renviron
+.env
+*_key.txt
+*cdsapirc*
+
+# ---- R / RStudio -----------------------------------------------------------
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+renv/library/
+renv/staging/
+
+# ---- OS ---------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Misc -------------------------------------------------------------------
+*.log
+~$*
