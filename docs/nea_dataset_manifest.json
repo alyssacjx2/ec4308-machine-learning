@@ -1,0 +1,237 @@
+{
+ "Air Temperature": [
+  [
+   "2016",
+   "d_2b359912668f5f55fde28254e9c9092d",
+   "Historical Air Temperature across Singapore (2016)"
+  ],
+  [
+   "2017",
+   "d_320fc57e7871bd0cd7a713f0f6f2f89e",
+   "Historical Air Temperature across Singapore (2017)"
+  ],
+  [
+   "2018",
+   "d_ef585339f3f57862d6cf13edd5a628c1",
+   "Historical Air Temperature across Singapore (2018)"
+  ],
+  [
+   "2019",
+   "d_6a384c5f4d719f33619563b27091b8fb",
+   "Historical Air Temperature across Singapore (2019)"
+  ],
+  [
+   "2020",
+   "d_10d453bc02d1a41daf6373b96b1929e4",
+   "Historical Air Temperature across Singapore (2020)"
+  ],
+  [
+   "2021",
+   "d_557fbb859f12a8af29ef4e1375288165",
+   "Historical Air Temperature across Singapore (2021)"
+  ],
+  [
+   "2022",
+   "d_6fd47a46bd59c5cb70d9561b404d0a64",
+   "Historical Air Temperature across Singapore (2022)"
+  ],
+  [
+   "2023",
+   "d_370bbfc65de96ad93eaefa182135d1c0",
+   "Historical Air Temperature across Singapore (2023)"
+  ],
+  [
+   "2024",
+   "d_910c81fce47f38574015b3882ac59254",
+   "Historical Air Temperature across Singapore (2024)"
+  ]
+ ],
+ "Rainfall": [
+  [
+   "2016",
+   "d_79a6f0fb898996d415b207bb26ed0fa6",
+   "Historical Rainfall across Singapore (2016)"
+  ],
+  [
+   "2017",
+   "d_1990a5a1aeaf3dd243cf4dae294a61c4",
+   "Historical Rainfall across Singapore (2017)"
+  ],
+  [
+   "2018",
+   "d_024fb501ce7092b71bb713eaf54fa7eb",
+   "Historical Rainfall across Singapore (2018)"
+  ],
+  [
+   "2019",
+   "d_61995f092320e7155b7528050880b502",
+   "Historical Rainfall across Singapore (2019)"
+  ],
+  [
+   "2020",
+   "d_9e7de44094f876f6804b8b5bcee45c81",
+   "Historical Rainfall across Singapore (2020)"
+  ],
+  [
+   "2021",
+   "d_3b41598f74f1f11fc3430348fea51af5",
+   "Historical Rainfall across Singapore (2021)"
+  ],
+  [
+   "2022",
+   "d_42d64cc6c176ace1c52fbb40b9ede302",
+   "Historical Rainfall across Singapore (2022)"
+  ],
+  [
+   "2023",
+   "d_f864cc30d58b467db83659ad17c737bf",
+   "Historical Rainfall across Singapore (2023)"
+  ],
+  [
+   "2024",
+   "d_a0b69d3e02576a1fd0ab673e71f83507",
+   "Historical Rainfall across Singapore (2024)"
+  ]
+ ],
+ "Relative Humidity": [
+  [
+   "2016",
+   "d_7419c1b8020cbba124cc5de3120debad",
+   "Historical Relative Humidity across Singapore (2016)"
+  ],
+  [
+   "2017",
+   "d_0e0e47c0657e4fe3fddae3b9e516ba74",
+   "Historical Relative Humidity across Singapore (2017)"
+  ],
+  [
+   "2018",
+   "d_dda4e2961282fe15a2a03209f8c60466",
+   "Historical Relative Humidity across Singapore (2018)"
+  ],
+  [
+   "2019",
+   "d_df0a643cabbe0ad9420ce8e2cf0e7ec2",
+   "Historical Relative Humidity across Singapore (2019)"
+  ],
+  [
+   "2020",
+   "d_15f4385609fa3aa8f5812872586cbb80",
+   "Historical Relative Humidity across Singapore (2020)"
+  ],
+  [
+   "2021",
+   "d_b30e532f095592dfa8fef924c2325b38",
+   "Historical Relative Humidity across Singapore (2021)"
+  ],
+  [
+   "2022",
+   "d_6ecc4ed07e7dcc024c22e548aa1e86f6",
+   "Historical Relative Humidity across Singapore (2022)"
+  ],
+  [
+   "2023",
+   "d_d6fb7c8f42cacf73af76d17518c39f24",
+   "Historical Relative Humidity across Singapore (2023)"
+  ],
+  [
+   "2024",
+   "d_7916c4c0cbe0dfaadaeac4b56d732a2a",
+   "Historical Relative Humidity across Singapore (2024)"
+  ]
+ ],
+ "Wind Speed": [
+  [
+   "2016",
+   "d_8f5b395a1750c915082cc60767a161b8",
+   "Historical Wind Speed across Singapore (2016)"
+  ],
+  [
+   "2017",
+   "d_bd8da65d5c75138c02ee26a93b944c19",
+   "Historical Wind Speed across Singapore (2017)"
+  ],
+  [
+   "2018",
+   "d_fc178195f22643b2bcb387e242466c7f",
+   "Historical Wind Speed across Singapore (2018)"
+  ],
+  [
+   "2019",
+   "d_e35b3c9f4f191e4735767972f7c7b3cb",
+   "Historical Wind Speed across Singapore (2019)"
+  ],
+  [
+   "2020",
+   "d_139acceccddabe1ffcda1d5a59a5b0b8",
+   "Historical Wind Speed across Singapore (2020)"
+  ],
+  [
+   "2021",
+   "d_50a5a13a8dc7cb8e3816f30433012f1f",
+   "Historical Wind Speed across Singapore (2021)"
+  ],
+  [
+   "2022",
+   "d_9ef0ce25fbeba52d3e5e23487d3f40fc",
+   "Historical Wind Speed across Singapore (2022)"
+  ],
+  [
+   "2023",
+   "d_de9a32cc338823ee9d58c3b7576fa267",
+   "Historical Wind Speed across Singapore (2023)"
+  ],
+  [
+   "2024",
+   "d_33f6c1091f73c1451c3aedc4f0061c9c",
+   "Historical Wind Speed across Singapore (2024)"
+  ]
+ ],
+ "Wind Direction": [
+  [
+   "2016",
+   "d_e09956bd042643535dab477e71644626",
+   "Historical Wind Direction across Singapore (2016)"
+  ],
+  [
+   "2017",
+   "d_4bd9b57adc22a7d604ce46cead6dece4",
+   "Historical Wind Direction across Singapore (2017)"
+  ],
+  [
+   "2018",
+   "d_e395e01b91907832fecf78dc4a8039d2",
+   "Historical Wind Direction across Singapore (2018)"
+  ],
+  [
+   "2019",
+   "d_8cf41a4413991a19ce9bcb4d6f5aa121",
+   "Historical Wind Direction across Singapore (2019)"
+  ],
+  [
+   "2020",
+   "d_2d6e5c7e8d3c9c8c55771b1514a463ce",
+   "Historical Wind Direction across Singapore (2020)"
+  ],
+  [
+   "2021",
+   "d_48db0c70697f48307ab5df8b5c413f92",
+   "Historical Wind Direction across Singapore (2021)"
+  ],
+  [
+   "2022",
+   "d_2fe3393d6ac6859b16f77c4aafcba55d",
+   "Historical Wind Direction across Singapore (2022)"
+  ],
+  [
+   "2023",
+   "d_c9a10c59294e89a8233562435f81b221",
+   "Historical Wind Direction across Singapore (2023)"
+  ],
+  [
+   "2024",
+   "d_c2083cf3e40ddf633b1421ad719067ff",
+   "Historical Wind Direction across Singapore (2024)"
+  ]
+ ]
+}
