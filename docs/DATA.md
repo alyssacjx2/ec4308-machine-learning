@@ -22,8 +22,15 @@ data/
 (3,926 days × 48 periods). No missing days or periods.
 
 Columns include `system_demand_actual_mw` (primary target), `nem_demand_actual_mw`, and
-**`nem_demand_forecast_mw` — EMA's own operational forecast**, which is a far stronger
-benchmark than seasonal-naive and should be used as one.
+**`nem_demand_forecast_mw` — EMA's own operational forecast**, RMSE 179.4 MW /
+MAPE 2.288% against actual demand.
+
+**It is not a horizon-matched benchmark.** EMA publishes one forecast per period and the
+data does not record how far ahead it was made, so it is a near-term operational forecast.
+Scored at h = 1, 6, 12 and 24 it returns the identical RMSE every time, because each
+horizon scores the same (actual, forecast) pairs merely shifted. Treat it as a reference
+level — the accuracy achievable with near-real-time information — and use seasonal-naive
+and AR(p) by BIC as the comparators that actually degrade with h.
 
 Compiled from 562 weekly EMA spreadsheets; see the README inside the zip for provenance.
 
@@ -108,20 +115,21 @@ Things that will silently corrupt results if missed:
    `[longitude, latitude, valid_time]` — the reverse of how the CDL header prints them.
    Averaging over the wrong axis returns 4 numbers that data.table **silently recycles
    23,556 times**, giving a constant column with no NAs and a plausible magnitude. This
-   bug shipped once and survived its first check. Find the time axis by name and assert
-   its length; never hard-code the axis. Full account in
-   [VERIFICATION.md](VERIFICATION.md) §2.
+   bug shipped once and survived its first check — the check reused the same `apply()`
+   call, so it validated nothing. Find the time axis by name and assert its length; never
+   hard-code the axis. See the ERA5 block in `R/build_dataset.R`.
 10. **ERA5 has no `t2m`.** The download holds `sshf`, `ssrd`, `tcc`, `tp`, `fdir` only, so
     there is no reanalysis fallback for temperature — the single most important weather
     predictor for electricity demand. NEA stations are the only temperature source.
 11. **ERA5 `tp` is near-useless hourly.** It correlates 0.229 with NEA rainfall at the
     same hour, rising to 0.564 daily and 0.802 weekly. A 28 km grid cannot place 5–10 km
     tropical convective cells, and reports non-zero rain in 93% of hours against NEA's
-    32%. Use NEA rainfall as the rainfall predictor. This is a resolution limit, verified
-    not to be a merge error — [VERIFICATION.md](VERIFICATION.md) §4.
+    32%. Use NEA rainfall as the rainfall predictor. It is a resolution limit rather than
+    a merge error: agreement that strengthens with aggregation is not what a timing or
+    indexing bug produces.
 12. **NEA outages drop whole UTC days.** Every missing block starts at 08:00 and ends at
     07:00 Singapore time. Gaps run 1.3–2.5% per variable and are concentrated in a few
     multi-day blocks (worst: 696h of rainfall, Aug 2018), not scattered. Census in
-    [VERIFICATION.md](VERIFICATION.md) §5.
+    the header of `R/build_features.R`.
 13. **Demand has zero missing hours.** Worth knowing because it means no imputation rule
     can ever leak into forecast accuracy through the target.
