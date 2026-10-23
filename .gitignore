@@ -1,9 +1,18 @@
-# ---- Data: never commit ----------------------------------------------------
-# The NEA pull alone is ~12M rows. GitHub rejects files >100MB and the repo
-# will become unusable for everyone. Data is reproduced by running R/01-03.
+# ---- Data --------------------------------------------------------------------
+# Raw data is never committed: ~1.8 GB gzipped, and GitHub rejects files >100 MB.
+# It is reproducible from docs/nea_dataset_manifest.json plus the scripts in R/.
 data/**
 !data/**/
 !data/**/.gitkeep
+
+# ...except the small derived outputs every teammate needs (~37 MB total), so
+# nobody has to download 1.8 GB of raw data or re-run a 45-minute aggregation
+# just to start modelling.
+#
+# NOTE: these are generated files. If you change aggregate_nea_hourly.R or
+# station_panel.R, re-run it and commit the new outputs, or they go stale.
+!data/interim/*_hourly.csv.gz
+!data/processed/station_panel.csv
 
 # Large intermediate model output (forecast matrices). Figures and tables in
 # output/figures and output/tables ARE tracked - they go in the report.
