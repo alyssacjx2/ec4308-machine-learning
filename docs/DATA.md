@@ -104,3 +104,24 @@ Things that will silently corrupt results if missed:
    real-time and can be used at time *t*.
 8. **EMA**: 398 half-hours show system demand below NEM demand, which cannot happen by
    definition. Left as published; mention in the report.
+9. **`ncvar_get()` returns dimensions in FILE order**, which for this ERA5 file is
+   `[longitude, latitude, valid_time]` — the reverse of how the CDL header prints them.
+   Averaging over the wrong axis returns 4 numbers that data.table **silently recycles
+   23,556 times**, giving a constant column with no NAs and a plausible magnitude. This
+   bug shipped once and survived its first check. Find the time axis by name and assert
+   its length; never hard-code the axis. Full account in
+   [VERIFICATION.md](VERIFICATION.md) §2.
+10. **ERA5 has no `t2m`.** The download holds `sshf`, `ssrd`, `tcc`, `tp`, `fdir` only, so
+    there is no reanalysis fallback for temperature — the single most important weather
+    predictor for electricity demand. NEA stations are the only temperature source.
+11. **ERA5 `tp` is near-useless hourly.** It correlates 0.229 with NEA rainfall at the
+    same hour, rising to 0.564 daily and 0.802 weekly. A 28 km grid cannot place 5–10 km
+    tropical convective cells, and reports non-zero rain in 93% of hours against NEA's
+    32%. Use NEA rainfall as the rainfall predictor. This is a resolution limit, verified
+    not to be a merge error — [VERIFICATION.md](VERIFICATION.md) §4.
+12. **NEA outages drop whole UTC days.** Every missing block starts at 08:00 and ends at
+    07:00 Singapore time. Gaps run 1.3–2.5% per variable and are concentrated in a few
+    multi-day blocks (worst: 696h of rainfall, Aug 2018), not scattered. Census in
+    [VERIFICATION.md](VERIFICATION.md) §5.
+13. **Demand has zero missing hours.** Worth knowing because it means no imputation rule
+    can ever leak into forecast accuracy through the target.
