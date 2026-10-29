@@ -7,7 +7,7 @@ ever will be** — see [Conventions](#conventions). Raw data totals ~1.7 GB comp
 ```
 data/
 ├── raw/
-│   ├── nea/        45 × Historical<Var>acrossSingapore<YYYY>.csv.gz   1.6 GB
+│   ├── nea/        55 × Historical<Var>acrossSingapore<YYYY>.csv.gz   1.6 GB
 │   ├── ema/        EMA Compiled Data.zip                              4 MB
 │   ├── era5/       era5_singapore_2016_2026.nc                        23 MB
 │   └── holidays/   sg_public_holidays_2016_2026.csv                   12 KB
@@ -35,22 +35,20 @@ and AR(p) by BIC as the comparators that actually degrade with h.
 Compiled from 562 weekly EMA spreadsheets; see the README inside the zip for provenance.
 
 ### ii. NEA — station weather
-`raw/nea/` — 45 gzipped CSVs, 5 variables × 2016–2024, minute-level, per station.
+`raw/nea/` — 55 gzipped CSVs, 5 variables × 2016–Sep 2026, minute-level, per station.
 
 | Variable | Coverage | Note |
 |---|---|---|
-| Air temperature | 2016–2024 | 2016 starts 15 Apr |
-| Relative humidity | 2016–2024 | **11 columns, not 12** |
-| Rainfall | 2016–2024 | **2016 holds only 2–3 Dec** |
-| Wind speed | 2016–2024 | |
-| Wind direction | 2016–2024 | circular — do not average naively |
+| Air temperature | 2016–Sep 2026 | 2016 starts 15 Apr |
+| Relative humidity | 2016–Sep 2026 | **11 columns, not 12** |
+| Rainfall | 2016–Sep 2026 | **2016 holds only 2–3 Dec** |
+| Wind speed | 2016–Sep 2026 | |
+| Wind direction | 2016–Sep 2026 | circular — do not average naively |
 
-Source: data.gov.sg bulk annual downloads. All 45 dataset IDs are in
-`docs/nea_dataset_manifest.json`; `R/02_extract_nea_weather.R` fetches and aggregates them.
-
-**Still outstanding: 2025 – Sep 2026.** No bulk files exist past 2024; that span must come
-from the live API (`https://api.data.gov.sg/v1/environment/<variable>?date=YYYY-MM-DD`,
-which returns a full day per call).
+Source: data.gov.sg bulk annual downloads. The 45 dataset IDs for 2016–2024 are in
+`docs/nea_dataset_manifest.json`; the 2025 and 2026 files follow the same
+`Historical<Var>acrossSingapore<YYYY>` naming but are not yet in the manifest.
+`R/aggregate_nea_hourly.R` aggregates all 55 to hourly × station in `data/interim/`.
 
 ### iii. ERA5 — reanalysis
 `raw/era5/era5_singapore_2016_2026.nc` — hourly, **1 Jan 2016 00:00 – 30 Sep 2026 23:00**,
