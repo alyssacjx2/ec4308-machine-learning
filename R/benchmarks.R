@@ -32,36 +32,27 @@ DUM <- as.matrix(f[, ..DUMS]) # matrix of Covid regime dummies, aligned with y, 
 T_first <- match(OOS_START, f$datetime)
 if (is.na(T_first)) stop("OOS_START not found in features: ", OOS_START)
 
-# Auxiliary error functions
-RMSE <- function(pred, truth) sqrt(mean((truth - pred)^2))
-MAE  <- function(pred, truth) mean(abs(truth - pred))
-MAPE <- function(pred, truth) 100 * mean(abs(truth - pred) / truth)
-
 # ---- 1. seasonal random walk -------------------------------------------------
 # Forecast = demand at the same hour one season ago: y_{t+h-168} (last week) or
 # y_{t+h-24} (yesterday).
 snaive <- function(y, h, s) shift(y, s - h)   # element t is y_{t+h-s}
 
 # ---- 2. AR(p) selected on BIC ------------------------------------------------
-# Lag matrix, built with embed() as in the lecture: row t holds
-# (y_t, y_{t-1}, ..., y_{t-P_MAX+1}). Padded with NA so row t is origin t.
+# Lag matrix, built with embed(): row t holds (y_t, y_{t-1}, ..., y_{t-P_MAX+1}).
+# Padded with NA so row t is origin t.
 LAGS <- rbind(matrix(NA_real_, P_MAX - 1L, P_MAX), embed(y, P_MAX))
 
 # Fit the direct h-step AR(p) at refit origin T0, p in 1..P_MAX chosen on BIC.
-# Mirrors runAR(type = "bic") in func-ar.R.
 runAR <- function(T0, h) {
   tr   <- (T0 - h - WINDOW + 1L):(T0 - h)  # training origins s, so that s + h <= T0
-  y_tr <- y[tr + h]
-  X    <- LAGS[tr, , drop = FALSE]
+  y_tr <- y[tr + h] # target values for training, y_{s+h}
+  X    <- LAGS[tr, , drop = FALSE] # lagged values for training
 
-  # Dummies are aligned with the TARGET hour, as the lecture aligns dum with y.
   # Covid regimes were announced in advance, so their value at t+h is known at t.
-  # A regime absent from this window is an all-zero column that would make the
-  # fit singular, so drop it.
-  D <- DUM[tr + h, , drop = FALSE]
-  D <- D[, colSums(D) > 0, drop = FALSE]
+  D <- DUM[tr + h, , drop = FALSE] # dummies for the target hour
+  D <- D[, colSums(D) > 0, drop = FALSE] # drop all-zero columns
 
-  n  <- length(y_tr)
+  n  <- length(y_tr) # number of training pairs, same for all candidate models
   bb <- Inf                                # initialise the "best BIC"
   for (i in 1:P_MAX) {                     # try every lag length 1..P_MAX
     Z <- cbind(1, X[, 1:i, drop = FALSE], D)
@@ -101,10 +92,8 @@ ar.rolling.window <- function(h) {
 }
 
 # ---- 3. run all horizons -----------------------------------------------------
-# One row per (forecast origin, h), with every benchmark side by side and the
-# actual value, saved to disk. Saving matters: the AR run takes ~6 minutes, while
-# evaluate.R and view_benchmarks.R can then reload the forecasts in a second.
-# EMA's forecast rides along as a reference level, not as a model of ours.
+# One row per (forecast origin, h), with every benchmark side by side .
+# EMA's forecast rides along as a reference level.
 res <- list()
 for (h in H) {
   cat("\nh =", h, "\n")
@@ -125,23 +114,4 @@ out <- rbindlist(res)
 
 if (!dir.exists(dirname(OUT))) dir.create(dirname(OUT), recursive = TRUE)
 fwrite(out, OUT)
-
-# ---- 4. errors ---------------------------------------------------------------
-# Quick look only. Full evaluation (DM tests, combinations) belongs in evaluate.R.
-# RMSE is the headline loss; MAE and MAPE are added because the load-forecasting
-# literature reports them almost universally. The p summary shows whether BIC is
-# pinned at P_MAX - if so, the search limit, not the data, is choosing p.
-cat("\n=== out-of-sample errors,", OOS_START, "onwards ===\n")
-err <- out[, {
-  m <- c("snaive168", "snaive24", "ar_bic", "ema")
-  .(model = m,
-    RMSE  = sapply(m, function(v) RMSE(get(v), actual)),
-    MAE   = sapply(m, function(v) MAE(get(v), actual)),
-    MAPE  = sapply(m, function(v) MAPE(get(v), actual)))
-}, by = h]
-print(err[, .(h, model, RMSE = round(RMSE, 1), MAE = round(MAE, 1), MAPE = round(MAPE, 3))])
-
-cat("\nAR lag length chosen by BIC (share of refits):\n")
-print(out[, .(p_min = min(ar_p), p_median = median(ar_p), p_max = max(ar_p)), by = h])
-
-cat("\nwritten:", OUT, "\n")
+cat("\nwritten:", OUT, "- run view_benchmarks.R to see the errors\n")
