@@ -1,8 +1,8 @@
 # benchmarks.R -----------------------------------------------------------------
 #
 #   1. seasonal random walk (seasonal naive), weekly and daily season
-#   2. direct h-step AR(p), p chosen by BIC, with hour-of-day, day-type and
-#      Covid regime dummies
+#   2. direct h-step AR(p), p chosen by BIC, with hour-of-day, day-type, their
+#      interactions, and Covid regime dummies
 #
 #   in : data/processed/features.csv.gz
 #   out: output/forecasts/benchmarks.csv.gz
@@ -40,7 +40,15 @@ DT <- outer(dtype, 1:6, "==") * 1
 colnames(HR) <- sprintf("hr%02d", 1:23)
 colnames(DT) <- c("mon", "tue", "wed", "thu", "fri", "sat")
 
-DUM <- cbind(as.matrix(f[, ..DUMS]), HR, DT) # all AR dummies, aligned with y
+# Hour x day-type interactions (23 x 6 = 138), so each day type gets its own
+# daily shape - not just the weekday shape shifted up or down. Without them the
+# errors kept a weekend/Monday pattern. With the main effects above, this is one
+# level per (day type, hour) cell: 167 dummies + intercept for 168 cells.
+HXD <- do.call(cbind, lapply(colnames(DT), function(d) {
+  m <- HR * DT[, d]; colnames(m) <- paste0(colnames(HR), "_", d); m
+}))
+
+DUM <- cbind(as.matrix(f[, ..DUMS]), HR, DT, HXD) # all AR dummies, aligned with y
 
 T_first <- match(OOS_START, f$datetime)
 if (is.na(T_first)) stop("OOS_START not found in features: ", OOS_START)
