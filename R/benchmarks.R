@@ -1,7 +1,8 @@
 # benchmarks.R -----------------------------------------------------------------
 #
 #   1. seasonal random walk (seasonal naive), weekly and daily season
-#   2. direct h-step AR(p), p chosen by BIC, with the Covid regime dummies
+#   2. direct h-step AR(p), p chosen by BIC, with hour-of-day, day-type and
+#      Covid regime dummies
 #
 #   in : data/processed/features.csv.gz
 #   out: output/forecasts/benchmarks.csv.gz
@@ -14,10 +15,12 @@ suppressMessages(library(data.table))
 IN        <-"data/processed/features.csv.gz"
 OUT       <- "output/forecasts/benchmarks.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)        # forecast horizons
-WINDOW    <- 3L * 365L * 24L            # 26,280 hours of training pairs
+WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training pairs
 REFIT     <- 168L                       # refit every week
-P_MAX     <- 24L                        # longest AR lag tried by BIC
-OOS_START <- "2020-01-13 00:00:00"      # first forecast origin, a Monday. TEAM DECISION:
+P_GRID    <- seq(24L, 168L, by = 24L)   # AR lag lengths tried by BIC: 1 day ... 1 week
+P_MAX     <- max(P_GRID)                # longest lag, sets the lag matrix width
+OOS_START <- "2018-07-16 00:00:00"      # first forecast origin: the first Monday with a
+                                        # full window and 168 lags behind it. TEAM DECISION:
                                         # every model must use the same value or the
                                         # forecasts cannot be compared / DM-tested.
 DUMS      <- c("cb_strict", "cb_p1", "cb_p2", "cb_p3", "ha_2021")
@@ -27,7 +30,17 @@ f <- fread(IN, colClasses = c(datetime = "character")) # read as character to av
 setorder(f, datetime) # sort by datetime
 y   <- f$y # target variable, the hourly load
 N   <- length(y) # number of hours in the dataset
-DUM <- as.matrix(f[, ..DUMS]) # matrix of Covid regime dummies, aligned with y, for AR regressions
+
+# Seasonal dummies: demand's mean depends on the hour and the day, so the AR gets
+# 23 hour-of-day dummies (baseline 00:00) and 6 day-type dummies (baseline
+# Sunday). A public holiday counts as a Sunday - its load profile looks like one.
+dtype <- ifelse(f$is_holiday == 1L, 0L, f$dow)          # dow: 0 = Sunday
+HR <- outer(f$hr, 1:23, "==") * 1
+DT <- outer(dtype, 1:6, "==") * 1
+colnames(HR) <- sprintf("hr%02d", 1:23)
+colnames(DT) <- c("mon", "tue", "wed", "thu", "fri", "sat")
+
+DUM <- cbind(as.matrix(f[, ..DUMS]), HR, DT) # all AR dummies, aligned with y
 
 T_first <- match(OOS_START, f$datetime)
 if (is.na(T_first)) stop("OOS_START not found in features: ", OOS_START)
@@ -42,22 +55,21 @@ snaive <- function(y, h, s) shift(y, s - h)   # element t is y_{t+h-s}
 # Padded with NA so row t is origin t.
 LAGS <- rbind(matrix(NA_real_, P_MAX - 1L, P_MAX), embed(y, P_MAX))
 
-# Fit the direct h-step AR(p) at refit origin T0, p in 1..P_MAX chosen on BIC.
+# Fit the direct h-step AR(p) at refit origin T0, p in P_GRID chosen on BIC.
 runAR <- function(T0, h) {
   tr   <- (T0 - h - WINDOW + 1L):(T0 - h)  # training origins s, so that s + h <= T0
   y_tr <- y[tr + h] # target values for training, y_{s+h}
   X    <- LAGS[tr, , drop = FALSE] # lagged values for training
 
-  # Covid regimes were announced in advance, so their value at t+h is known at t.
+  # The calendar and the Covid regimes (announced in advance) are known at t for
+  # the target hour t+h, so the dummies use the target hour's values.
   D <- DUM[tr + h, , drop = FALSE] # dummies for the target hour
   D <- D[, colSums(D) > 0, drop = FALSE] # drop all-zero columns
 
   n  <- length(y_tr) # number of training pairs, same for all candidate models
   bb <- Inf                                # initialise the "best BIC"
-  for (i in 1:P_MAX) {                     # try every lag length 1..P_MAX
+  for (i in P_GRID) {                      # try each lag length in the grid
     Z <- cbind(1, X[, 1:i, drop = FALSE], D)
-    # .lm.fit is lm() without the formula overhead (~5x faster). All candidates
-    # share the same n, so n*log(RSS/n) + k*log(n) ranks them exactly as BIC().
     m    <- .lm.fit(Z, y_tr)
     crit <- n * log(sum(m$residuals^2) / n) + ncol(Z) * log(n)
     if (crit < bb) {                       # if BIC improved, keep this model
@@ -69,7 +81,7 @@ runAR <- function(T0, h) {
 }
 
 # Rolling window: refit every REFIT hours, forecast every origin until the next
-# refit. Mirrors ar.rolling.window() in func-ar.R.
+# refit.
 ar.rolling.window <- function(h) {
   origins <- T_first:(N - h)               # the last h origins have no y_{t+h}
   refits  <- seq(T_first, N - h, by = REFIT)
