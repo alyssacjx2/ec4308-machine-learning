@@ -72,7 +72,7 @@ their outputs are committed, so most people can start at step 3.
 | 2 | `aggregate_nea_hourly.R` | 55 raw NEA files → hourly × station in `data/interim/` | ~12 min |
 | 3 | `build_dataset.R` | Merges all four sources onto one hourly spine | ~3 min |
 | 4 | `build_features.R` | Imputes weather gaps, builds the model matrix | ~1 min |
-| 5 | `benchmarks.R` | Seasonal naive + AR(p) by BIC → `output/forecasts/benchmarks.csv.gz` | ~40 min |
+| 5 | `benchmarks.R` | Seasonal naive + AR(p) by BIC → `output/forecasts/benchmarks.csv.gz` | ~2.5 h |
 | 6 | `forecast.R` | Rolling-window engine — **not written yet** | — |
 | 7 | `evaluate.R` | RMSE/MAE/MAPE, Diebold-Mariano, combination — **not written yet** | — |
 
@@ -186,23 +186,25 @@ block).
 - **Seasonal naive**, ŷ<sub>t+h</sub> = y<sub>t+h−s</sub>, with a daily (s = 24)
   and a weekly (s = 168) season. Nothing is estimated.
 - **AR(p) by BIC**, direct: y<sub>t+h</sub> on y<sub>t</sub>, …, y<sub>t−p+1</sub>,
-  p ∈ {24, 48, …, 168} (1 day to 1 week), plus dummies for the **target** hour:
-  23 hour-of-day, 6 day-type (public holiday = Sunday) and the Covid regimes. The
+  p ∈ {24, 48, …, 168} (1 day to 1 week) re-selected at every refit, plus
+  dummies for the **target** hour: 23 hour-of-day, 6 day-type (public holiday =
+  Sunday), their 138 hour × day-type interactions, and the Covid regimes. The
   dummies make it strictly an ARX — not a demand-only benchmark.
 
 Out-of-sample RMSE (MW), 16 Jul 2018 – 30 Sep 2026:
 
 | h | snaive24 | snaive168 | AR(p) | EMA (reference) |
 |---|---|---|---|---|
-| 1 | 338 | 241 | **36** | 186 |
-| 6 | 338 | 241 | **126** | 186 |
-| 12 | 338 | 241 | **150** | 186 |
-| 24 | 338 | 241 | **155** | 186 |
+| 1 | 338 | 241 | **30** | 186 |
+| 6 | 338 | 241 | **89** | 186 |
+| 12 | 338 | 241 | **115** | 186 |
+| 24 | 338 | 241 | **130** | 186 |
 
-Known limits: BIC picks p = 168, the largest allowed, at every refit; and the AR
-errors still show a weekend/Monday pattern at h ≥ 6
-(`output/figures/error_by_hour_of_week.png`), because additive dummies give every
-day the same hourly shape. Public holidays roughly double its error.
+The interactions cut the AR's RMSE by 16–29% against hour and day-type dummies
+alone (DM significant at every h) and removed the weekend/Monday pattern from
+its errors (`output/figures/error_by_hour_of_week.png`). BIC then settles on a
+median p = 72 (range 24–168), so the lag limit no longer binds. A full run takes
+~2.5 hours.
 
 ## Status
 
