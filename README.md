@@ -4,7 +4,8 @@ EC4308 Machine Learning and Economic Forecasting — Group 10.
 
 Direct multi-horizon forecasts of Singapore system demand at **h = 1, 6, 12 and
 24 hours**, comparing regularised linear methods and tree ensembles against
-time-series benchmarks on a 3-year rolling window with weekly refitting.
+time-series benchmarks on a 1.5-year rolling window with weekly refitting. See
+[Shared forecast settings](#shared-forecast-settings) — every model must use them.
 
 **EMA's own operational forecast** sets the reference level at RMSE 179.4 MW /
 MAPE 2.288%. Read that number carefully: EMA publishes one forecast per period
@@ -16,8 +17,8 @@ the identical RMSE at every horizon, because each horizon is the same
 So it is a reference level — "the accuracy achievable with near-real-time
 information" — and **not** a horizon-matched benchmark. Beating it at h = 1 is a
 fair fight; losing to it at h = 24 says nothing about the model. The
-horizon-matched comparators are **seasonal-naive and AR(p) by BIC**, which
-degrade with h the way our models do. Stating EMA's 179 MW as a 24-hour-ahead
+horizon-matched comparators are **seasonal-naive and AR(p) by BIC** (see
+[Benchmarks](#benchmarks)), which degrade with h the way our models do. Stating EMA's 179 MW as a 24-hour-ahead
 benchmark in the report would invite a fair criticism.
 
 ---
@@ -35,6 +36,7 @@ data/               NOT in the repo, except as noted in DATA.md
   processed/        merged dataset and model matrix (generated)
 logs/               stdout from the long extraction and aggregation runs
 output/figures/     plots
+output/forecasts/   forecast files (generated, not committed)
 ```
 
 **Read [`docs/DATA.md`](docs/DATA.md) before touching the data.** Its "Known
@@ -70,8 +72,13 @@ their outputs are committed, so most people can start at step 3.
 | 2 | `aggregate_nea_hourly.R` | 55 raw NEA files → hourly × station in `data/interim/` | ~12 min |
 | 3 | `build_dataset.R` | Merges all four sources onto one hourly spine | ~3 min |
 | 4 | `build_features.R` | Imputes weather gaps, builds the model matrix | ~1 min |
-| 5 | `forecast.R` | Rolling-window engine — **not written yet** | — |
-| 6 | `evaluate.R` | RMSE/MAE/MAPE, Diebold-Mariano, combination — **not written yet** | — |
+| 5 | `benchmarks.R` | Seasonal naive + AR(p) by BIC → `output/forecasts/benchmarks.csv.gz` | ~40 min |
+| 6 | `forecast.R` | Rolling-window engine — **not written yet** | — |
+| 7 | `evaluate.R` | RMSE/MAE/MAPE, Diebold-Mariano, combination — **not written yet** | — |
+
+`view_benchmarks.R` prints the benchmark error tables and redraws the figures
+from the saved forecasts in seconds; rerun `benchmarks.R` only when its code
+changes.
 
 ```bash
 Rscript R/build_dataset.R
@@ -154,12 +161,56 @@ Two things to know when reading coefficients:
   0.02–1.59 mm) where the observed series is zero in 68% of hours. Those 2,154
   hours lose their zero-inflation structure; `imp_rain_mm` marks them.
 
+## Shared forecast settings
+
+Every model uses these, or its forecasts are for different hours and cannot be
+compared or Diebold-Mariano tested. They are set at the top of `benchmarks.R`.
+
+| Setting | Value |
+|---|---|
+| Horizons | h = 1, 6, 12, 24 — direct forecasting, one model per h |
+| Training window | rolling, **1.5 years = 13,140 hours** of (origin, target) pairs |
+| Refit | every **168 hours** (weekly) |
+| First forecast origin | **2018-07-16 00:00:00**, the first Monday with a full window and 168 lags behind it; runs to the end of the data |
+| No leakage | at a refit at origin T0, train only on pairs whose target y<sub>s+h</sub> is observed, i.e. s + h ≤ T0 |
+| Output | one row per (origin, h): `datetime` (the origin), `h`, `actual` = y<sub>t+h</sub>, then one column per model |
+
+The window was cut from the proposal's 3 years after the professor's comments:
+1–1.5 years of training data is enough, and it halves the cost of each refit.
+
+## Benchmarks
+
+`benchmarks.R`, following the Lecture 4 code (`func-ar.R` and the random-walk
+block).
+
+- **Seasonal naive**, ŷ<sub>t+h</sub> = y<sub>t+h−s</sub>, with a daily (s = 24)
+  and a weekly (s = 168) season. Nothing is estimated.
+- **AR(p) by BIC**, direct: y<sub>t+h</sub> on y<sub>t</sub>, …, y<sub>t−p+1</sub>,
+  p ∈ {24, 48, …, 168} (1 day to 1 week), plus dummies for the **target** hour:
+  23 hour-of-day, 6 day-type (public holiday = Sunday) and the Covid regimes. The
+  dummies make it strictly an ARX — not a demand-only benchmark.
+
+Out-of-sample RMSE (MW), 16 Jul 2018 – 30 Sep 2026:
+
+| h | snaive24 | snaive168 | AR(p) | EMA (reference) |
+|---|---|---|---|---|
+| 1 | 338 | 241 | **36** | 186 |
+| 6 | 338 | 241 | **126** | 186 |
+| 12 | 338 | 241 | **150** | 186 |
+| 24 | 338 | 241 | **155** | 186 |
+
+Known limits: BIC picks p = 168, the largest allowed, at every refit; and the AR
+errors still show a weekend/Monday pattern at h ≥ 6
+(`output/figures/error_by_hour_of_week.png`), because additive dummies give every
+day the same hourly shape. Public holidays roughly double its error.
+
 ## Status
 
 Done: all four sources acquired and verified, station panel fixed, NEA
 aggregated to hourly, merged dataset built and verified, feature matrix built
-and verified. `features.csv.gz` is ready for modelling.
+and verified, benchmarks (seasonal naive, AR(p) by BIC) run.
 
-Next: `forecast.R` — the rolling-window engine (3-year window, weekly refit,
-h = 1/6/12/24) over `rlasso`/post-LASSO, random forest and bagging, then
-`evaluate.R` for Diebold-Mariano tests and forecast combination.
+Next: `forecast.R` — the rolling-window engine with the
+[shared settings](#shared-forecast-settings) over `rlasso`/post-LASSO, random
+forest and bagging, then `evaluate.R` for Diebold-Mariano tests and forecast
+combination.
