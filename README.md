@@ -175,13 +175,9 @@ compared or Diebold-Mariano tested. They are set at the top of `benchmarks.R`.
 | No leakage | at a refit at origin T0, train only on pairs whose target y<sub>s+h</sub> is observed, i.e. s + h ≤ T0 |
 | Output | one row per (origin, h): `datetime` (the origin), `h`, `actual` = y<sub>t+h</sub>, then one column per model |
 
-The window was cut from the proposal's 3 years after the professor's comments:
-1–1.5 years of training data is enough, and it halves the cost of each refit.
-
 ## Benchmarks
 
-`benchmarks.R`, following the Lecture 4 code (`func-ar.R` and the random-walk
-block).
+`benchmarks.R`
 
 - **Seasonal naive**, ŷ<sub>t+h</sub> = y<sub>t+h−s</sub>, with a daily (s = 24)
   and a weekly (s = 168) season. Nothing is estimated.
@@ -203,16 +199,4 @@ Out-of-sample RMSE (MW), 16 Jul 2018 – 30 Sep 2026:
 The interactions cut the AR's RMSE by 16–29% against hour and day-type dummies
 alone (DM significant at every h) and removed the weekend/Monday pattern from
 its errors (`output/figures/error_by_hour_of_week.png`). BIC then settles on a
-median p = 72 (range 24–168), so the lag limit no longer binds. A full run takes
-~2.5 hours.
-
-## Status
-
-Done: all four sources acquired and verified, station panel fixed, NEA
-aggregated to hourly, merged dataset built and verified, feature matrix built
-and verified, benchmarks (seasonal naive, AR(p) by BIC) run.
-
-Next: `forecast.R` — the rolling-window engine with the
-[shared settings](#shared-forecast-settings) over `rlasso`/post-LASSO, random
-forest and bagging, then `evaluate.R` for Diebold-Mariano tests and forecast
-combination.
+median p = 72 (range 24–168). A full run takes ~2.5 hours.

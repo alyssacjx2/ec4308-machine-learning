@@ -1,7 +1,6 @@
 # view_benchmarks.R ------------------------------------------------------------
-# Loads the saved benchmark forecasts and prints the error table, in seconds.
-# Run benchmarks.R (~6 min) only when the benchmark code itself changes; use
-# this file to look at the results.
+# Loads the saved benchmark forecasts and prints the error table.
+# Use this file to look at the results.
 #
 #   in : output/forecasts/benchmarks.csv.gz   (from benchmarks.R)
 
@@ -10,7 +9,6 @@ suppressMessages(library(data.table))
 bm <- fread("output/forecasts/benchmarks.csv.gz", colClasses = c(datetime = "character"))
 
 # ---- errors ------------------------------------------------------------------
-# Quick look only. Full evaluation (DM tests, combinations) belongs in evaluate.R.
 # RMSE is the headline loss; MAE and MAPE are added because the load-forecasting
 # literature reports them almost universally.
 RMSE <- function(pred, truth) sqrt(mean((truth - pred)^2))
@@ -29,7 +27,6 @@ print(err[, .(h, model, RMSE = round(RMSE, 1), MAE = round(MAE, 1), MAPE = round
 
 # ---- best model per horizon --------------------------------------------------
 # The same RMSEs side by side, one row per h, so the winner reads across a row.
-# Compare within a row only: longer horizons are harder, so errors grow with h.
 cat("\n=== RMSE by horizon (MW), lowest = best ===\n")
 wide <- dcast(err, h ~ model, value.var = "RMSE")
 setkey(wide, NULL)                     # dcast sets a key; drop it so it is not printed
@@ -46,12 +43,14 @@ print(bm[, .(p_min = min(ar_p), p_median = median(ar_p), p_max = max(ar_p)), by 
 
 # ---- figures -----------------------------------------------------------------
 # 1. two ordinary weeks of demand: the daily shape, and weekends below weekdays
+#    Reading: every day dips to ~5,100 MW at night and peaks ~7,000 MW in the
+#    afternoon; Sat/Sun peak lower (~6,200-6,700). The mean depends on the hour and
+#    the day, so the series needs hour, day-type and hour x day-type dummies.
 # 2. mean error by target hour of the week (0 = Sun 00:00 ... 167 = Sat 23:00),
-#    one panel per h: a flat line = daily AND weekly seasonality captured; a model
-#    that misses the weekend shows a spike on Mon and a dip on Sat/Sun. Panels
-#    share one y-axis so horizons compare directly. EMA is left out - it
-#    forecasts NEM demand, which sits below system demand, so its errors carry a
-#    level offset that is not a seasonality failure.
+#    one panel per h: a flat line = daily AND weekly seasonality captured.
+#    Reading: snaive24 forecasts Monday from Sunday (+900 MW) and Saturday from
+#    Friday (-600 MW) - it misses the weekly season. snaive168 and the AR are flat
+#    at every h, so both capture the daily and weekly seasonality.
 FIG <- "output/figures"
 if (!dir.exists(FIG)) dir.create(FIG, recursive = TRUE)
 DAYS <- c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
