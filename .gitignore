@@ -19,6 +19,10 @@ data/**
 output/forecasts/**
 !output/forecasts/
 !output/forecasts/.gitkeep
+# ...except the finished forecast matrices themselves (~8 MB gzipped each).
+# evaluate.R has to merge every model's file, so they need to reach one place.
+# Commit these only once a model's settings are final, not after exploratory runs.
+!output/forecasts/*.csv.gz
 
 # Extraction gap logs
 logs/**

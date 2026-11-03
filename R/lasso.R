@@ -44,7 +44,7 @@ OUT <- if (PARTIAL_OUT) "output/forecasts/lasso.csv.gz" else
 
 # Smoke test: set to a small number (e.g. 5) to run a few refits per horizon and
 # confirm the script works before committing to the full run. Inf = full run.
-MAX_REFITS <- 5
+MAX_REFITS <- Inf
 
 # ---- load --------------------------------------------------------------------
 f <- fread(IN, colClasses = c(datetime = "character"))
