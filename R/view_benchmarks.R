@@ -1,6 +1,6 @@
 # view_benchmarks.R ------------------------------------------------------------
-# Loads the saved benchmark forecasts and prints the error table.
-# Use this file to look at the results.
+# Loads the saved benchmark forecasts, prints the error tables and AR lag
+# lengths, and redraws the figures. Use this file to look at the results.
 #
 #   in : output/forecasts/benchmarks.csv.gz   (from benchmarks.R)
 
@@ -22,18 +22,22 @@ err <- bm[, .(model = models,
               MAE   = sapply(models, function(v) MAE(get(v), actual)),
               MAPE  = sapply(models, function(v) MAPE(get(v), actual))), by = h]
 
-cat("=== out-of-sample errors,", min(bm$datetime), "->", max(bm$datetime), "===\n")
-print(err[, .(h, model, RMSE = round(RMSE, 1), MAE = round(MAE, 1), MAPE = round(MAPE, 3))])
+cat("out-of-sample forecast origins:", min(bm$datetime), "->", max(bm$datetime), "\n")
 
 # ---- best model per horizon --------------------------------------------------
-# The same RMSEs side by side, one row per h, so the winner reads across a row.
-cat("\n=== RMSE by horizon (MW), lowest = best ===\n")
-wide <- dcast(err, h ~ model, value.var = "RMSE")
-setkey(wide, NULL)                     # dcast sets a key; drop it so it is not printed
-own  <- setdiff(models, "ema")
-wide[, best := own[apply(.SD, 1, which.min)], .SDcols = own]
-setcolorder(wide, c("h", models, "best"))
-print(wide[, lapply(.SD, function(x) if (is.numeric(x) && !is.integer(x)) round(x, 1) else x)])
+# The same errors side by side, one table per loss and one row per h, so the
+# winner reads across a row. `best` is among our models only; EMA is a reference.
+own <- setdiff(models, "ema")
+for (loss in c("RMSE", "MAE", "MAPE")) {
+  cat(sprintf("\n=== %s by horizon (%s), lowest = best ===\n", loss,
+              if (loss == "MAPE") "%" else "MW"))
+  wide <- dcast(err, h ~ model, value.var = loss)
+  setkey(wide, NULL)                   # dcast sets a key; drop it so it is not printed
+  wide[, best := own[apply(.SD, 1, which.min)], .SDcols = own]
+  setcolorder(wide, c("h", models, "best"))
+  digits <- if (loss == "MAPE") 3 else 1
+  print(wide[, lapply(.SD, function(x) if (is.numeric(x) && !is.integer(x)) round(x, digits) else x)])
+}
 
 # ---- AR lag length -----------------------------------------------------------
 # Shows whether BIC is pinned at P_MAX - if so, the search limit, not the data,
@@ -76,7 +80,8 @@ invisible(dev.off())
 
 tt <- as.POSIXlt(as.POSIXct(bm$datetime, tz = "UTC") + bm$h * 3600L)
 bm[, how_target := tt$wday * 24L + tt$hour]
-plot_models <- own                                     # EMA excluded, see above
+plot_models <- own   # EMA excluded: it forecasts NEM demand, below system demand,
+                     # so its errors carry a level offset that is not seasonality
 by_how <- bm[, lapply(.SD, function(p) mean(actual - p)), by = .(h, how_target),
              .SDcols = plot_models][order(h, how_target)]
 cols <- setNames(seq_along(plot_models), plot_models)
