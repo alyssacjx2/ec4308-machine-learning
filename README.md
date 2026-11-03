@@ -7,8 +7,8 @@ Direct multi-horizon forecasts of Singapore system demand at **h = 1, 6, 12 and
 time-series benchmarks on a 1.5-year rolling window with weekly refitting. See
 [Shared forecast settings](#shared-forecast-settings) — every model must use them.
 
-**EMA's own operational forecast** sets the reference level at RMSE 179.4 MW /
-MAPE 2.288%. Read that number carefully: EMA publishes one forecast per period
+**EMA's own operational forecast** sets the reference level at RMSE 186.0 MW /
+MAPE 2.310% over the 2018–2026 test period. Read that number carefully: EMA publishes one forecast per period
 and the data does not record how far ahead it was made, so it is a **near-term**
 operational forecast, not a 24-hour-ahead one. Scored against `y_h<h>` it returns
 the identical RMSE at every horizon, because each horizon is the same
@@ -18,7 +18,7 @@ So it is a reference level — "the accuracy achievable with near-real-time
 information" — and **not** a horizon-matched benchmark. Beating it at h = 1 is a
 fair fight; losing to it at h = 24 says nothing about the model. The
 horizon-matched comparators are **seasonal-naive and AR(p) by BIC** (see
-[Benchmarks](#benchmarks)), which degrade with h the way our models do. Stating EMA's 179 MW as a 24-hour-ahead
+[Benchmarks](#benchmarks)), which degrade with h the way our models do. Stating EMA's 186 MW as a 24-hour-ahead
 benchmark in the report would invite a fair criticism.
 
 ---

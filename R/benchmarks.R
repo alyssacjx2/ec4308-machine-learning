@@ -12,7 +12,7 @@ suppressMessages(library(data.table))
 # ---- 0. settings -------------------------------------------------------------
 # The teammates' ML scripts must use the same H, WINDOW, REFIT and
 # OOS_START, otherwise the forecasts are for different hours and cannot be compared.
-IN        <-"data/processed/features.csv.gz"
+IN        <- "data/processed/features.csv.gz"
 OUT       <- "output/forecasts/benchmarks.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)        # forecast horizons
 WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training pairs
@@ -112,7 +112,7 @@ ar.rolling.window <- function(h) {
 }
 
 # ---- 3. run all horizons -----------------------------------------------------
-# One row per (forecast origin, h), with every benchmark side by side .
+# One row per (forecast origin, h), with every benchmark side by side.
 # EMA's forecast rides along as a reference level.
 res <- list()
 for (h in H) {
