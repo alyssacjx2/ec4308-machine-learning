@@ -1,0 +1,586 @@
+---
+title: "LightGBM forecasts of Singapore's hourly electricity demand"
+subtitle: "EC4308 Group 10, Model 5: method, code and preliminary results"
+author: "Group 10, Model 5 (LightGBM)"
+date: "Preliminary run, 2 November 2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+---
+
+```{r setup, include = FALSE}
+# The code chunks that show R/lgbm.R are display-only (eval = FALSE): the model is run
+# with `Rscript R/lgbm.R`, not by knitting. The results chunks (eval = TRUE) read the
+# saved output files, so knitting takes seconds once lgbm.R and benchmarks.R have run.
+knitr::opts_chunk$set(eval = FALSE, echo = TRUE, message = FALSE, warning = FALSE,
+                      comment = "#>")
+ROOT <- if (requireNamespace("here", quietly = TRUE)) here::here() else normalizePath("..")
+knitr::opts_knit$set(root.dir = ROOT)            # paths relative to the project root
+knitr::read_chunk(file.path(ROOT, "R/lgbm.R"))   # the code shown below is the script itself
+```
+
+```{r load-results, eval = TRUE, include = FALSE}
+# Tables and figures come from view_lgbm.R, so the document and the script agree.
+source("R/view_lgbm.R", local = knitr::knit_global())
+e <- function(m, hh, what = "MAE") {             # one number from the error table
+  v <- err[h == hh & model == m][[what]]
+  formatC(v, format = "f", digits = if (what == "MAPE") 2 else 1)
+}
+tdm <- function(hh, b) formatC(dm[h == hh & versus == b, t_lag168], format = "f", digits = 2)
+gshare <- function(hh, v) formatC(100 * ia[h == hh & Feature == v, gain], format = "f", digits = 0)
+cb_mae <- function(hh, m)                         # MAE over the 2020 circuit breaker
+  formatC(lg[h == hh & datetime >= "2020-04-07" & datetime < "2020-06-02",
+             mean(abs(actual - get(m)))], format = "f", digits = 1)
+n_fc <- lg[, .N, by = h]                          # forecasts per horizon
+```
+
+# Summary {-}
+
+- **Model.** LightGBM gradient-boosted regression trees, with one *direct* model per horizon
+  $h \in \{1, 6, 12, 24\}$: $\hat y_{t+h|t} = \hat f_h(x_t)$.
+- **Shared settings** (README): a rolling window of 13,140 hourly (origin, target) pairs,
+  1.5 years, refitted every 168 hours. Every origin is forecast from 16 July 2018 to the end
+  of the data on 30 September 2026. That is `r format(n_fc[h == 1, N], big.mark = ",")`
+  forecasts per horizon, on exactly the same hours as the seasonal-naive and AR(p)
+  benchmarks in `benchmarks.R`.
+- **Tuning: recursive validation on MAE.** Inside each training window, the last 4 weeks
+  are forecast by a model fitted on the weeks before them, with the same $h$-hour gap a
+  real refit keeps. Three things are chosen there by validation MAE: the training loss
+  (squared or absolute error), the tree size (15, 31 or 63 leaves) and the number of trees.
+  This is redone at every 4th refit, about monthly. The shrinkage is fixed at
+  $\lambda = 0.05$. No forecast hour is ever used to choose anything.
+- **Metrics.** MAE is the headline and MAPE the scale-free companion. RMSE is not used.
+- **Preliminary results.** LightGBM's MAE is `r e("lgbm", 1)`, `r e("lgbm", 6)`,
+  `r e("lgbm", 12)` and `r e("lgbm", 24)` MW at $h$ = 1, 6, 12 and 24, which is a MAPE of
+  `r e("lgbm", 1, "MAPE")`% to `r e("lgbm", 24, "MAPE")`%. On the same hours the AR(p)
+  benchmark gets `r e("ar_bic", 1)` to `r e("ar_bic", 24)` MW. The weekly seasonal naive gets
+  `r e("snaive168", 1)` MW at every horizon, since it forecasts each target hour from the same
+  hour a week earlier, whatever $h$ is. LightGBM has the lowest MAE of the
+  single models at every horizon, significantly below the AR at all four (DM test,
+  absolute loss). Averaging LightGBM and the AR is better still at $h = 1$. See the
+  [results](#results) and [first observations](#observations).
+- **Code.** `R/lgbm.R` produces the forecasts and `R/view_lgbm.R` prints the tables and draws
+  the figures, in the same format as `benchmarks.R` and `view_benchmarks.R`. The forecasts
+  are in the shared output format in `output/forecasts/lgbm.csv.gz`.
+
+# What changed since the first draft
+
+| Item | First draft (27 Oct) | Now | Why |
+|---|---|---|---|
+| Training window | 3 years, 26,280 h | **1.5 years, 13,140 h** | Professor: 1 to 1.5 years is enough; README shared settings |
+| Evaluation period | Oct 2024 to Sep 2026 | **16 Jul 2018 to 30 Sep 2026** | First Monday with a full window behind it; same hours as the benchmarks |
+| Metrics | RMSE primary | **MAE headline, MAPE companion**; no RMSE | Group decision, following the professor's comment on MAE and MAPE |
+| Tuning | once, on a validation year before the test period, on RMSE | **recursive validation on MAE inside every window**, redone every 4th refit | No validation period is left before 2018-07-16; re-validating as data arrive (Lecture 4, slide 25) |
+| Training loss | squared error only | **chosen by validation**: squared or absolute | MAE's optimal forecast is the median, not the mean (Section 3.1) |
+| Target-hour features | optional, off | **on**: target hour's calendar, demand at the target's clock hour 1 day and 1 week earlier | `benchmarks.R` gives the AR target-hour dummies and 168 lags; same information set |
+| Code | one `.Rmd` | **`R/lgbm.R` and `R/view_lgbm.R`** in Chris's format; this document explains them | Team format; one source of truth for the code |
+| Computation | one process | **7 parallel processes** | The CRAN build of LightGBM for macOS runs on a single core |
+
+# Context
+
+## Shared forecast settings
+
+From the README on Chris's branch. Every model uses these, or its forecasts are for different
+hours and cannot be compared or DM-tested.
+
+| Setting | Value |
+|---|---|
+| Horizons | $h$ = 1, 6, 12, 24: direct forecasting, one model per $h$ |
+| Training window | rolling, 1.5 years = 13,140 hours of (origin, target) pairs |
+| Refit | every 168 hours (weekly) |
+| First forecast origin | 2018-07-16 00:00:00, the first Monday with a full window and 168 lags behind it; runs to the end of the data |
+| No leakage | at a refit at origin $T_0$, train only on pairs whose target $y_{s+h}$ is observed: $s + h \le T_0$ |
+| Output | one row per (origin, $h$): `datetime` (the origin), `h`, `actual` $= y_{t+h}$, then one column per model |
+
+## The professor's comments, and where they are reflected
+
+1. *MAE and MAPE as performance indicators; forecasts from a rolling window, so DM tests can
+   be used later.* MAE is the headline loss and the tuning criterion, and MAPE is reported
+   next to it. The forecasts come from the shared rolling window. `view_lgbm.R` runs
+   preliminary DM tests on absolute-error loss; the full tests belong in `evaluate.R`.
+2. *A simple average forecast combination over the most promising models.* `view_lgbm.R`
+   reports the equal-weight average of LightGBM and the AR(p) benchmark as a first look.
+3. *A three-year rolling window with weekly (preferred) refitting.* Refitting is weekly. The
+   window is 1.5 years, after the professor's later remark that 1 to 1.5 years is enough.
+
+## What the data pipeline provides
+
+- `R/build_features.R` writes `data/processed/features.csv.gz`: 85,440 hours (2017-01-01
+  00:00 to 2026-09-30 23:00, Singapore time) × 65 columns. Regenerate it with
+  `R/build_dataset.R` and `R/build_features.R` ([reproducing](#reproduce)).
+- **Timing convention.** Row $t$ holds what is known once hour $t$ has been observed: demand
+  `y`, NEA weather, lags, trailing means, ERA5 (already lagged 120 hours for its publication
+  delay), and the calendar. `y_h<h>` is demand at $t+h$. Pairing row $t$'s predictors with
+  $y_{t+h}$ is a direct $h$-step forecast made at origin $t$.
+- **EMA's forecast** (`nem_h<h>`) is a reference level, never a predictor. It is not
+  horizon-matched, so its error is the same at every $h$.
+- **Weather gaps** of 1.3 to 2.5% are interpolated or filled from a climatology, and flagged in
+  `imp_*`. Demand has no gaps.
+
+# Theory, and why each step follows from it
+
+## The forecasting target and the loss (Lecture 4)
+
+A forecast is judged by a loss, and the loss decides which feature of the conditional
+distribution is the best forecast:
+
+- under squared loss it is the **conditional mean**, $E(y_{t+h} \mid \Omega_t)$ (Lecture 4,
+  slide 6);
+- under absolute loss, which MAE measures, it is the **conditional median**;
+- MAPE weights each error by $1/y_{t+h}$. Demand never falls far below its average, so this
+  is close to the median.
+
+LightGBM can be trained on either loss: `objective = "l2"` fits the mean, `"l1"` the median.
+Absolute loss matches the evaluation. Squared loss often trains more efficiently, because its
+gradients carry the size of each error, and with roughly symmetric errors the mean and median
+nearly coincide. Rather than assume one, **the training loss is a tuning parameter**, chosen
+by validation MAE like the others.
+
+We forecast **directly**, with a separate model per horizon:
+$$\hat y_{t+h|t} = \hat f_h(x_t), \qquad
+  \hat f_h = \arg\min_f \sum_{s \in \mathcal{T}} L\big(y_{s+h}, f(x_s)\big),
+  \qquad \mathcal{T} = \{\, s : s + h \le T_0 \,\}.$$
+Iterating a 1-step model would need future weather we do not observe, and would compound
+errors. The direct strategy is the one the Lecture 4 code uses.
+
+## Boosting (Lecture 3.2)
+
+Boosting adds many *small* trees one after another, each fitted to what the current model
+still gets wrong, and shrinks each one so that learning is slow (slides 23 to 28).
+
+- **L2 boosting (slide 24).** $f_0 = 0$. For $m = 1, \dots, M$, fit a tree $h_m$ with $d+1$
+  leaves to the residuals $r_{im} = y_i - f_{m-1}(x_i)$, then set
+  $f_m = f_{m-1} + \lambda h_m$.
+- **Gradient boosting (slides 27 and 29)** works for any loss. The residuals become negative
+  gradients, and each leaf $R_{jm}$ gets its own optimal value
+  $\gamma_{jm} = \arg\min_\gamma \sum_{x_i \in R_{jm}} L\big(y_i, f_{m-1}(x_i) + \gamma\big)$.
+- **Tuning parameters:** the shrinkage $\lambda$, the tree size $d$, and the number of trees
+  $M$. Unlike a random forest, **boosting overfits as $M$ grows**, so $M$ must be chosen on
+  data the trees were not fitted to. $\lambda$ and $M$ trade off, so the advice in class was to
+  fix $\lambda$ and tune $M$ (slide 28).
+- **Stochastic gradient boosting (slide 28):** each tree sees a random half of the rows.
+
+## What LightGBM changes
+
+LightGBM (Ke et al., 2017) is an *implementation* of gradient boosting.
+
+- **Squared loss.** The gradient is $f - y$ and the Hessian is 1, so each leaf value is the
+  mean residual in the leaf. That is L2 boosting.
+- **Absolute loss.** The gradient is the *sign* of the error. After a tree is grown, each leaf
+  is reset to the **median** residual in it. That is the leaf-wise line search of slide 29 for
+  absolute loss.
+- **The tree.** Splits are searched over at most 255 histogram bins per predictor, which is the
+  main source of speed. Trees grow leaf-wise until they have `num_leaves` leaves, so
+  `num_leaves` $= d + 1$.
+- **Categorical predictors.** A categorical predictor such as day of week can be split into
+  any two groups of levels in one step.
+
+| Lecture (ISLR / `gbm`) | LightGBM parameter | Here |
+|---|---|---|
+| $M$ (`n.trees`) | `nrounds` | **tuned**: early stopping on validation MAE, at most 3,000 |
+| $\lambda$ (`shrinkage`) | `learning_rate` | fixed at 0.05 |
+| $d$ (`interaction.depth`) | `num_leaves` $= d+1$ | **tuned**: 15, 31 or 63 |
+| loss (`distribution`) | `objective` | **tuned**: `"l2"` (mean) or `"l1"` (median) |
+| `n.minobsinnode` | `min_data_in_leaf` | 20 (default) |
+| `bag.fraction` | `bagging_fraction`, `bagging_freq` | 0.5, redrawn every tree |
+| (random forest's $m < P$) | `feature_fraction` | 0.8 per tree |
+
+## Time-series issues (Lecture 4) and how each is handled
+
+| Issue | Lecture 4 | Here |
+|---|---|---|
+| K-fold CV is invalid for dependent data | slides 20 to 26: use recursive (pseudo-out-of-sample) validation unless the predictors are only lags of $y$ with uncorrelated errors | Validation is always the *latest* 4 weeks of the window, forecast by a model fitted on earlier weeks. Never `lgb.cv()` or random folds |
+| An $h$-step forecast needs a gap | slide 23; the Lecture 4 functions drop the last $h-1$ observations | Training pairs satisfy $s + h \le T_0$, and the validation fit stops $h$ hours before the validation block |
+| Tuning parameters go stale | slide 25: re-validate from time to time as data arrive | Re-validated at every 4th weekly refit |
+| Seasonality | slide 19 | calendar of the origin *and* of the target hour; lags at 24 and 168 hours, including target-aligned ones |
+| Trend | slide 19 | Trees cannot extrapolate, so `t_index` and `year` are dropped. The level comes from demand lags, and the 1.5-year window is refitted weekly |
+| Structural breaks | slide 19 | Covid regime dummies; the rolling window drops old regimes |
+| Rolling scheme and DM tests | slides 36 and 40 | A fixed-length rolling window keeps the forecast-error variance stable, and the DM test stays valid for nested models (Giacomini and White, 2006) |
+
+# Design
+
+## Recursive validation on MAE
+
+At a re-validation refit at origin $T_0$, for horizon $h$:
+
+```text
+training origins (13,140):  T0-h-13139 ........................................................ T0-h
+                            |<---------- validation fit ---------->|<--- h --->|<-- validation: last 672 -->|
+                             targets all observed by the first      gap          forecast by the validation
+                             validation origin V                                 fit, scored by MAE
+```
+
+1. **Validation fit.** For each of the 6 grid points (loss × leaves), fit on the window's
+   origins up to $V - h$, where $V$ is the first of the last 672 origins. Record the MAE on the
+   672 validation origins after every tree. Stop 100 trees after the last improvement, with at
+   most 3,000 trees. The best number of trees for that grid point is the minimum of its MAE
+   curve.
+2. **Choose** the grid point and number of trees with the lowest validation MAE.
+3. **Refit** that choice on the whole 13,140-origin window, then forecast the next 168 origins.
+4. At the next three weekly refits, the **same settings** are refitted on each new window
+   without re-validating. The cycle then repeats.
+
+**Why this design.**
+
+- *No forecast hour is used.* The validation block lies inside the training window, before
+  $T_0$, and the forecasts start at $T_0$. This is Lecture 4's recursive validation: a
+  contiguous block at the end, forecast $h$ steps ahead by a model that has seen only earlier
+  data.
+- *There is no other place to tune.* The first window ends just before 2018-07-16, and every
+  later hour is an evaluation hour. Tuning once on a separate period would mean tuning on hours
+  we later evaluate. Re-validating inside each window is the honest alternative, and it adapts
+  as demand changes (slide 25).
+- *The last 4 weeks are the most relevant data* for the coming week. 672 hours average over
+  four weekly cycles.
+- *Every 4th refit* keeps the run to about three-quarters of an hour on 7 processes.
+  Re-validating at every refit is a one-line change (`RETUNE <- 1L`) at roughly 2.5 times the
+  run time.
+
+## Predictors
+
+| Change from `features.csv.gz` | Columns | Reason |
+|---|---|---|
+| dropped | `temp_sq`, `cdh` | Monotone transforms of `temp_c`: a tree's split on them is a split on `temp_c` |
+| dropped | `t_index`, `year` | A linear trend. Trees cannot extrapolate it, and every forecast hour lies beyond its window's range |
+| added | `hr_tgt`, `dow_tgt`, `holiday_tgt`, `workday_tgt` | The *target* hour's calendar, fixed in advance. `benchmarks.R` gives the AR the same target-hour dummies |
+| added | `dem_tgt_1w` $= y_{t+h-168}$, `dem_tgt_1d` $= y_{t+h-24}$ ($h < 24$) | Demand at the target's clock hour 1 week and 1 day earlier. These are the seasonal-naive forecasts, and the AR's 168 lags contain them |
+| categorical | `dow`, `dow_tgt` | One split can separate {Sat, Sun}, coded 6 and 0 |
+| not needed | hour × day-of-week dummies, scaling | Trees find interactions by splitting twice, and are unaffected by monotone transformations |
+
+## The procedure in pseudo-code
+
+```text
+FOR each horizon h in {1, 6, 12, 24}:
+  FOR each refit origin T0 = 2018-07-16 00:00, +168h, ... (k = 1, 2, ...):
+      window = origins s in [T0-h-13139, T0-h]                  # s + h <= T0: targets observed
+      IF k = 1, 5, 9, ... (every 4th refit):                    # recursive validation on MAE
+          valid = last 672 origins of window;  fit = window origins s <= first(valid) - h
+          FOR loss in {l2, l1}, leaves in {15, 31, 63}:
+              boost on fit (lambda = 0.05), score MAE on valid after each tree,
+              stop 100 trees after the best; M(loss, leaves) = argmin
+          settings = (loss, leaves, M) with the lowest validation MAE
+      model = boost on the whole window with settings
+      forecast yhat_{t+h|t} = model(x_t) for t = T0, ..., T0+167
+OUTPUT one row per (origin, h): datetime, h, actual, lgbm, settings used
+```
+
+## Computation
+
+The CRAN build of `lightgbm` for macOS runs on one core. `lgbm.R` therefore splits the
+refits into tasks of 32 consecutive refits, each starting with a re-validation. It runs 56
+tasks on 7 parallel R processes, longest-horizon work first. The run behind these results
+took about 56 minutes on an 8-core laptop, with `benchmarks.R` running alongside. With
+`deterministic = TRUE` and a fixed seed, reruns on the same machine give identical
+forecasts.
+
+# Code
+
+The chunks below are pulled from `R/lgbm.R` section by section, so this is the code that
+produced the results.
+
+## Settings
+
+The shared settings are copied from `benchmarks.R`, and the LightGBM settings follow. The grid
+is 2 losses × 3 tree sizes. `RETUNE` sets how often to re-validate. `CORES` and `CHUNK` only
+affect speed.
+
+```{r code-settings, ref.label = "0. settings"}
+```
+
+```{r code-load, ref.label = "load"}
+```
+
+## Predictors
+
+`make_X(h)` builds the predictor matrix once per horizon: the shared columns, minus the four
+dropped ones, plus the target-hour columns for that $h$.
+
+```{r code-predictors, ref.label = "1. predictors"}
+```
+
+## One refit: recursive validation, then the final fit
+
+`runLGBM()` is the counterpart of `runAR()` in `benchmarks.R` and of `runrf()` in the Lecture 4
+code. Without `best`, it re-validates on the window's last 4 weeks for every grid point, with
+early stopping on MAE. `lgb.get.eval.result()` returns the validation MAE after every tree, and
+the minimum of that curve gives the number of trees. With `best`, it refits those settings
+directly.
+
+```{r code-fit, ref.label = "2. LightGBM fit at one refit"}
+```
+
+## Rolling window
+
+`lgbm.rolling.window()` is the counterpart of `ar.rolling.window()`. It runs the refits it is
+given and re-validates when $(k-1)$ is a multiple of `RETUNE`. Each fit forecasts the 168
+origins up to the next refit.
+
+```{r code-rolling, ref.label = "3. rolling window"}
+```
+
+## Running all horizons in parallel
+
+```{r code-run, ref.label = "4. run all horizons"}
+```
+
+`R/view_lgbm.R`, the counterpart of `view_benchmarks.R`, reads the three output files. It
+merges them with `benchmarks.csv.gz` on (origin, $h$), checks that the `actual` columns agree,
+and produces everything in the next section.
+
+# Preliminary results {#results}
+
+The evaluation period runs from `r min(lg$datetime)` to `r max(lg$datetime)`, with
+`r format(n_fc[h == 1, N], big.mark = ",")` hourly forecasts per horizon. Model columns:
+
+- `lgbm`: LightGBM.
+- `ar_bic`: direct AR(p) by BIC with target-hour and Covid dummies (`benchmarks.R`).
+- `avg_lgbm_ar`: the simple average of the two.
+- `snaive168`, `snaive24`: demand at the same hour one week or one day before the target.
+- `ema`: EMA's operational forecast, a reference level only, not horizon-matched.
+
+These results are preliminary. Nothing in them was used to make any modelling choice.
+
+## Accuracy
+
+```{r tab-mae, eval = TRUE, echo = FALSE}
+wide_err <- function(v, digits) {
+  w <- dcast(err, h ~ model, value.var = v)
+  setcolorder(w, c("h", models))
+  w[, best := own[apply(.SD, 1, which.min)], .SDcols = own]
+  w
+}
+knitr::kable(wide_err("MAE", 1), digits = 1,
+             caption = "MAE (MW) by horizon; best = lowest among the forecasting models (EMA excluded)")
+```
+
+```{r tab-mape, eval = TRUE, echo = FALSE}
+knitr::kable(wide_err("MAPE", 3), digits = 3, caption = "MAPE (%) by horizon")
+```
+
+![](../output/figures/lgbm_mae_by_year.png)
+
+## Are the differences significant? DM tests
+
+Absolute-error loss, $d_t = |e_t^{\text{versus}}| - |e_t^{\text{lgbm}}|$, so $d_t > 0$ when
+LightGBM is closer. The mean of $d_t$ comes from a regression on a constant with a Newey-West
+standard error, as in the Lecture 4 code. Two lag choices are shown: the cube-root rule
+($P^{1/3} \approx 41$) and one week (168). The hourly loss differentials are strongly
+autocorrelated, so the second is the safer reading (Question 4).
+
+```{r tab-dm, eval = TRUE, echo = FALSE}
+knitr::kable(dm, caption = "DM tests on absolute loss; |t| > 1.96 rejects equal accuracy at 5%")
+```
+
+## Where the errors are
+
+Mean error by target hour of the week. A flat line means the daily and weekly patterns are
+captured; a spike means a systematic miss at that hour.
+
+![](../output/figures/lgbm_error_by_hour_of_week.png)
+
+![](../output/figures/lgbm_two_weeks.png)
+
+## What the tuning chose
+
+```{r tab-tuning, eval = TRUE, echo = FALSE}
+knitr::kable(ch[, .N, by = .(h, loss = objective, leaves = num_leaves)][
+  , share := round(N / sum(N), 2), by = h][order(h, -N)],
+  caption = "Grid point chosen at the re-validations (every 4th refit)")
+knitr::kable(ch[, .(re_validations = .N, trees_min = min(trees), trees_median = median(trees),
+                    trees_max = max(trees), at_cap = sum(trees > 0.95 * MAX_TREES)), by = h],
+             caption = "Number of trees chosen; at_cap counts choices within 5% of the 3,000 limit")
+```
+
+![](../output/figures/lgbm_tuning.png)
+
+## Which predictors the model uses
+
+Gain importance (Lecture 3.2, slides 38 and 39) is averaged over all weekly refits. A
+predictor that a refit never split on counts as zero for that refit.
+
+![](../output/figures/lgbm_importance.png)
+
+## First observations {#observations}
+
+These describe this run. Interpretation is for the group.
+
+1. **LightGBM beats the AR benchmark at every horizon.** Its MAE is `r e("lgbm", 1)`,
+   `r e("lgbm", 6)`, `r e("lgbm", 12)` and `r e("lgbm", 24)` MW at $h$ = 1, 6, 12 and 24,
+   against `r e("ar_bic", 1)`, `r e("ar_bic", 6)`, `r e("ar_bic", 12)` and
+   `r e("ar_bic", 24)` MW. MAPE ranks them the same way. The DM statistics (absolute loss,
+   168 lags) are `r tdm(1, "ar_bic")` at $h = 1$, a small gain and only just significant, and
+   `r tdm(6, "ar_bic")`, `r tdm(12, "ar_bic")` and `r tdm(24, "ar_bic")` at $h$ = 6, 12 and
+   24. Both models are far ahead of the seasonal naive.
+2. **Averaging pays at $h = 1$.** The simple average of LightGBM and the AR reaches
+   `r e("avg_lgbm_ar", 1)` MW at $h = 1$, below either model alone ($t$ = `r tdm(1, "avg_lgbm_ar")`;
+   negative means the average is closer). At $h$ = 6 and 12, LightGBM alone is as good or
+   better ($t$ = `r tdm(6, "avg_lgbm_ar")` and `r tdm(12, "avg_lgbm_ar")`). At $h = 24$ the
+   average is marginally better ($t$ = `r tdm(24, "avg_lgbm_ar")`).
+3. **LightGBM under-forecasts on average.** Its mean error (actual minus forecast) is
+   `r e("lgbm", 1, "ME")` MW at $h = 1$ and `r e("lgbm", 6, "ME")` to `r e("lgbm", 24, "ME")` MW
+   at $h \ge 6$, larger than the AR's `r e("ar_bic", 6, "ME")` to `r e("ar_bic", 24, "ME")` MW.
+   This is the extrapolation problem of Issue 4: demand grows, and a tree cannot forecast
+   above what its window has seen. A level correction or a change target is the natural next
+   experiment (Question 8).
+4. **The weekly pattern is handled better than by the AR.** At $h \ge 6$, LightGBM's errors
+   around the weekend and on Mondays are much smaller than the AR's, which is where the AR's
+   additive dummies struggle (README, Benchmarks). The remaining weak spot is the
+   Monday-morning ramp, under-forecast by up to
+   `r round(by_how[h >= 6 & how_target %between% c(24, 36), max(lgbm)])` MW on average
+   (Monday 00:00 to 12:00, $h \ge 6$).
+5. **Over time.** LightGBM's yearly MAE at $h = 6$ rises from
+   `r formatC(by_year[h == 6 & year == 2018, lgbm], format = "f", digits = 1)` MW in 2018 to
+   `r paste(round(by_year[h == 6 & year >= 2021, range(lgbm)]), collapse = " to ")` MW in
+   2021 to 2026. The AR stays between
+   `r paste(round(by_year[h == 6, range(ar_bic)]), collapse = " and ")` MW, so the gap
+   narrows. The
+   2020 circuit breaker does not stand out in yearly MAE. Over its 8 weeks, LightGBM's MAE at
+   $h = 6$ was `r cb_mae(6, "lgbm")` MW against the AR's `r cb_mae(6, "ar_bic")` MW.
+6. **Tuning.** At $h = 1$, squared loss won
+   `r round(100 * ch[h == 1, mean(objective == "l2")])`% of the re-validations. At $h \ge 6$
+   the two losses split roughly evenly. The median number of trees falls from
+   `r ch[h == 1, median(trees)]` at $h = 1$ to `r ch[h == 24, median(trees)]` at $h = 24$: the
+   longer the horizon, the noisier the target, and the sooner validation MAE stops improving.
+   `r ch[, sum(trees > 0.95 * MAX_TREES)]` of `r nrow(ch)` re-validations came within 5% of the
+   3,000-tree cap.
+7. **What the model relies on.** At $h = 1$, current demand `y` takes
+   `r gshare(1, "y")`% of the gain. At $h \ge 6$ the target-aligned weekly lag `dem_tgt_1w`
+   leads, with `r gshare(6, "dem_tgt_1w")` to `r gshare(24, "dem_tgt_1w")`% of the gain. Next
+   come demand at the target's hour a day earlier (`dem_tgt_1d`, or `y` itself at $h = 24$)
+   and the target hour's calendar. The target-hour features added in this version are the most
+   used predictors. Weather contributes mainly through the trailing temperature means, with
+   small shares.
+
+# Issues, risks and limitations {#issues}
+
+**A. For the whole group**
+
+1. **Same information set.** LightGBM uses the target hour's calendar and target-aligned demand
+   lags, as the AR benchmark does through target-hour dummies and 168 lags. The random forest
+   and LASSO should use the same information, or a difference in accuracy mixes the method
+   with the information.
+2. **Same rows.** `view_lgbm.R` merges on (origin, $h$) and checks that `actual` agrees with
+   `benchmarks.csv.gz`. Every model must keep to the shared settings for this to work.
+3. **Proposal versus what was done.** The proposal mentions a 3-year window, RMSE, expanding-
+   window CV and $h$ = 1, 24. The report should describe the settings actually used.
+
+**B. LightGBM-specific**
+
+4. **Trees cannot extrapolate.** A forecast is a sum of leaf values bounded by the training
+   window, so new record peaks tend to be under-predicted. The 1.5-year window refitted weekly
+   limits the damage.
+5. **Re-validation every 4th refit, not every refit.** Settings are carried for three weeks.
+   `RETUNE <- 1L` re-validates weekly at about 2.5 times the run time.
+6. **Noisy validation.** 672 autocorrelated hours carry less information than their count
+   suggests, so the chosen settings can flip between neighbouring re-validations. The tuning
+   figure shows how stable they are.
+7. **The number of trees is chosen on a slightly smaller sample.** The validation fit uses
+   $13{,}140 - 672 - h$ origins and the final fit 13,140, about 5% more data, and $M$ is not
+   rescaled. This is conventional, and errs on the side of too few trees.
+8. **Early stopping and the cap.** Stopping 100 trees after the last improvement can end on a
+   noisy plateau. Absolute loss with small trees learns slowly, so check `at_cap` in the tuning
+   table.
+9. **Row subsampling ignores dependence.** It regularises and is not used for inference, the
+   same position Lecture 4 takes for bagging and random forests.
+10. **Correlated predictors share importance.** Examples are `y` and `dem_lag1`, and `temp_c`
+    and `temp_ma24`. At $h = 24$, `hr_tgt` duplicates `hr` exactly.
+11. **Reproducibility.** Reruns are identical on this machine and LightGBM version, not across
+    machines. On Windows (the group's R 4.4.2), `lightgbm` is multithreaded, so `CORES` and
+    `num_threads` can be rebalanced there.
+
+**C. From the data and the sample**
+
+12. **Covid in the evaluation period.** The 2020 circuit breaker is forecast by models trained
+    on pre-Covid windows. The Covid dummies are zero in training until a regime starts, so the
+    first weeks of each regime are poorly forecast, for every model alike. See the 2020 points
+    in the MAE-by-year figure.
+13. **Weather is observed only at the origin.** There are no weather *forecasts* for $t+h$,
+    which limits the longer horizons.
+14. **Imputation climatology.** It is computed on the full sample, a bounded leak into
+    1.3 to 2.5% of weather values. It never reaches the target.
+15. **EMA is a reference only.** It forecasts NEM demand, which sits below system demand, so
+    its errors carry a level offset, and they are the same at every $h$.
+
+**D. Evaluation**
+
+16. **DM tests on hourly forecasts.** With about 72,000 overlapping forecasts per horizon, the
+    loss differentials are strongly autocorrelated, so the HAC lag matters. The full tests
+    belong in `evaluate.R`.
+17. **Choosing the "most promising" models on test MAE is mild look-ahead.** Pre-specify the
+    combination, for example all ML models, or choose it on validation data.
+18. **Several horizons, models and losses** will produce some "significant" results by chance.
+    Report all of them.
+
+# Questions for the consultation {#questions}
+
+The first five matter most.
+
+1. **Recursive validation.** Is it acceptable to tune on the last 4 weeks of each 1.5-year
+   window, with the $h$-hour gap and early stopping on MAE, re-validated every 4th weekly
+   refit? Or should we re-validate every refit, or use a longer validation block?
+2. **Training loss.** Is it fine to let validation choose between squared and absolute loss,
+   or should boosting be trained on absolute loss throughout, for consistency with MAE?
+3. **Information set.** Should every ML model use the target hour's calendar and target-aligned
+   seasonal lags, as the AR benchmark's target-hour dummies already do?
+4. **DM tests.** With about 72,000 hourly forecasts per horizon, which HAC lag is appropriate:
+   the cube root ($\approx 41$), one week (168), or daily-averaged loss differentials?
+5. **Combination.** Which models go into the simple average, and should that be fixed before
+   looking at evaluation MAE?
+6. **Covid.** Should we report results with and without 2020 to 2021, given that no model can
+   learn a regime before it starts?
+7. **Shrinkage.** Is $\lambda = 0.05$ fixed (rather than at most 0.01) acceptable for compute
+   reasons?
+8. **Trend.** Is the level target with demand lags acceptable for trees, or would he prefer
+   modelling changes?
+9. **EMA.** Is reporting EMA's forecast as a reference level, not a benchmark, the right
+   treatment?
+10. **Linex.** Is the asymmetric loss from the proposal still wanted, now that MAE and MAPE are
+    the headline metrics?
+
+# Reproducing the results {#reproduce}
+
+From the project root, on the `lgbm` branch (created locally from `origin/chris`), with the
+raw EMA, ERA5 and holiday files unzipped into `data/raw/`:
+
+```bash
+Rscript R/build_dataset.R
+```
+
+```bash
+Rscript R/build_features.R
+```
+
+```bash
+Rscript R/benchmarks.R
+```
+
+```bash
+Rscript R/lgbm.R
+```
+
+```bash
+Rscript R/view_lgbm.R
+```
+
+`Rscript R/lgbm.R --dry-run` runs 3 refits per horizon, in about a minute, to check the code.
+Packages: `data.table`, `R.utils`, `ncdf4`, `lightgbm` (4.6.0 here), `sandwich`, and `here`
+for knitting this file.
+
+# References {-}
+
+- Lecture 3.2 (tree ensembles, boosting) and Lecture 4 (time series, CV, DM test), EC4308,
+  Semester 1 2026/27, and the accompanying R code.
+- James, Witten, Hastie and Tibshirani, *An Introduction to Statistical Learning*, Section 8.2.
+- Friedman, J. H. (2001). Greedy function approximation: a gradient boosting machine.
+  *Annals of Statistics*, 29(5).
+- Friedman, J. H. (2002). Stochastic gradient boosting. *Computational Statistics & Data
+  Analysis*, 38(4).
+- Ke, G. et al. (2017). LightGBM: a highly efficient gradient boosting decision tree.
+  *Advances in Neural Information Processing Systems* 30.
+- Diebold, F. X. and Mariano, R. S. (1995). Comparing predictive accuracy. *Journal of Business
+  & Economic Statistics*, 13(3).
+- Giacomini, R. and White, H. (2006). Tests of conditional predictive ability. *Econometrica*,
+  74(6).
