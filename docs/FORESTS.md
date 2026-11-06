@@ -1,30 +1,5 @@
 # Random forest and bagging
 
-## Fixed-mtry alternative
-
-The fixed method is independent of the tuning scripts. Its code dependencies are:
-
-- `R/run_fixed_forests.R`: settings, fixed model fits and rolling forecasts.
-- `R/utils.R`: compressed input loading.
-- `R/compare_forests.R`: evaluation metrics.
-
-Neither `R/random_forest.R`, `R/tree_tuning.R`, `R/bagging.R` nor
-`R/run_forest_comparison.R` is needed to run the fixed method. For a fixed-only
-submission, include the three scripts above and this documentation. The existing
-`output/fixed_forests/forecasts.csv` and `comparison.csv` are optional saved
-results; they are not inputs to model training.
-
-Install `data.table` and `ranger`, provide `gzip` on PATH (or Git for Windows),
-and generate `data/processed/features.csv.gz` using the repository's data pipeline.
-Run all commands from the repository root. A full rerun replaces the forecast
-file; use a separate directory for a quick reproducibility check:
-
-```sh
-FIXED_OUTPUT_DIR=output/fixed_forests_check RF_MAX_REFITS=1 RF_NUM_TREES=10 Rscript R/run_fixed_forests.R
-```
-
-This check deliberately uses 10 trees for speed; the default full run uses 500.
-
 `Rscript R/run_fixed_forests.R` runs without tuning: RF uses floor(p/3)=18
 and classical bagging uses mtry=p=54.
 `forecasts.csv` holds both models' predictions, mtry and OOB MSE side by side,
@@ -64,18 +39,13 @@ horizons 1/6/12/24, 500 trees, minimum split-node size 5, bootstrap sampling wit
 seed 4308. Predictor selection is unchanged (54 predictors in the current data).
 The first forecast origin is 2018-07-16 00:00:00 Asia/Singapore. Evaluation
 continues through 2026-09-30 23:00:00 (target time), capped by data availability.
-The explicit cutoff prevents any later target hours from entering evaluation
-if the input dataset is extended.
+The processed file currently extends into 1 October; this explicit cutoff keeps
+those target hours out of evaluation.
 For horizon h and refit T, training feature times run from T-h-13,139 hours
 through T-h, inclusive: exactly 13,140 pairs, matching benchmarks.R.
 Each hourly forecast uses features observed at that hour, with a weekly fitted
 model. Training labels must already be observed at the weekly refit.
 
-## Tuning only mtry
-
-At every RF refit and horizon, start at `max(1, floor(p/3))`. Multiply by 1.5,
-round upward, and cap at `p`. For p=54 the potential path is 18, 27, 41, 54.
-Only mtry changes between candidate fits. Each candidate uses the same seed.
 
 `ranger` reports regression OOB error as MSE. Stop at the first candidate whose
 MSE is equal to or higher than the best earlier candidate, or when p is reached.
