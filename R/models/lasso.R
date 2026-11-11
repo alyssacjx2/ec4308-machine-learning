@@ -93,10 +93,29 @@ origin_time <- setdiff(
 X_org <- as.matrix(f[, ..origin_time])
 X_org <- cbind(y_t = y, X_org)
 
-# The hour-of-week cell, 0..167. Integer hr and dow are dropped from the
-# penalised block: the 168 cells already span every hour effect, every weekday
-# effect and their interaction, so keeping them too would be exactly collinear.
-hd      <- f$hr * 7L + f$dow
+# The hour-of-week cell, 0..167, built from the DAY TYPE rather than the raw
+# weekday: a public holiday takes the Sunday profile.
+#
+# Why. A weekday holiday's hourly demand curve is almost exactly a Sunday's.
+# Mean gap across the 24 hours is 51 MW against Sunday, against 220 for Saturday
+# and 576 for an ordinary weekday; shape correlation with Sunday is 0.999.
+# Coding a holiday by its raw weekday handed it a working day's shape, leaving a
+# single additive is_holiday dummy to correct the level - which cannot fix a
+# shape. At h = 24 that cost 324 MW MAE on weekday holidays against the AR's
+# 140, while LASSO beat the AR on every other day type. Holidays falling on a
+# weekend were barely affected, because those already landed in a weekend cell.
+#
+# The cells remain a complete set of mutually exclusive dummies (every hour
+# falls in exactly one), so the partialling-out shortcut below - residualising
+# by subtracting the cell mean - is still exact.
+dtype   <- fifelse(f$is_holiday == 1L, 0L, f$dow)   # 0 = Sunday
+hd      <- f$hr * 7L + dtype
+
+# hr and dow stay out of the penalised block. hr is still spanned by the cells.
+# dow is now only partly spanned - a weekday holiday sits in a Sunday cell while
+# keeping its own weekday - but is_weekend, is_workday and is_holiday already
+# let LASSO separate a true Sunday from a holiday, so an integer weekday would
+# add little.
 tt_keep <- setdiff(target_time, c("hr", "dow"))
 X_pen   <- cbind(X_org, as.matrix(f[, ..tt_keep]))
 
@@ -127,9 +146,11 @@ cat("design:", ncol(X_pen), "penalised predictors",
 # and the 85,440 x 167 dummy matrix never has to exist - we only need the cell
 # index. That is why PARTIAL_OUT = TRUE is the cheaper branch, not the dearer one.
 #
-# Note is_weekend is a sum of hour-of-week cells, so residualising sends it to
-# exactly zero; the constant-column filter in run_lasso() then drops it. That is
-# correct - once the cells are in the model unpenalised, is_weekend adds nothing.
+# Note is_weekend is no longer a sum of the cells, now that holidays take the
+# Sunday cell: a true Sunday and a weekday holiday share a cell but differ in
+# is_weekend. So it survives residualisation and stays available to LASSO, which
+# is what lets the model tell those two cases apart. (Under the old raw-weekday
+# coding it was exactly spanned, residualised to zero, and dropped.)
 
 # Cell means of a matrix, returned as (G x ncol) with the row order of `levels`.
 cell_means <- function(M, g, levels) {
@@ -282,11 +303,13 @@ if (!dir.exists(dirname(OUT))) dir.create(dirname(OUT), recursive = TRUE)
 fwrite(out, OUT)
 
 cat("\n=== out-of-sample error summary ===\n")
-for (h in H) {
-  s <- out[h == ..h & !is.na(actual)]
+# Loop variable is `hh`, not `h`: inside out[...] a bare `h` resolves to the
+# COLUMN h, so `h == h` would match every row, and `h == ..h` fails outright.
+for (hh in H) {
+  s <- out[h == hh & !is.na(actual)]
   if (!nrow(s)) next
   cat(sprintf("  h=%2d  n=%s  LASSO RMSE %6.1f  MAE %6.1f  MAPE %.3f%%  |  post RMSE %6.1f  |  median vars %d\n",
-      h, format(nrow(s), big.mark = ","),
+      hh, format(nrow(s), big.mark = ","),
       sqrt(mean((s$actual - s$lasso)^2)), mean(abs(s$actual - s$lasso)),
       100 * mean(abs(s$actual - s$lasso) / s$actual),
       sqrt(mean((s$actual - s$post_lasso)^2)),
