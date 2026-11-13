@@ -121,8 +121,19 @@ horizon-matched benchmarks are the seasonal-naive models and the AR(p).
 
 ## 5. Results
 
-Out-of-sample RMSE in MW over all 71,952–71,975 forecast origins, 16 Jul 2018 to
-30 Sep 2026. Bold marks the best model at each horizon.
+We report three error measures. Lower is better on all of them, and bold
+marks the best model at each horizon (EMA excluded).
+
+- **RMSE** (root mean squared error, MW) punishes large misses heavily.
+- **MAE** (mean absolute error, MW) is the typical miss in megawatts.
+- **MAPE** (mean absolute percentage error, %) is the typical miss as a share
+  of demand.
+
+### 5.1 Full sample (16 Jul 2018 – 30 Sep 2026)
+
+This covers 71,952–71,975 forecast origins at each horizon.
+
+**RMSE (MW)**
 
 | Model | h = 1 | h = 6 | h = 12 | h = 24 |
 |---|---|---|---|---|
@@ -138,22 +149,61 @@ Out-of-sample RMSE in MW over all 71,952–71,975 forecast origins, 16 Jul 2018 
 | Seasonal naive (24h) | 338.2 | 338.2 | 338.1 | 338.0 |
 | *EMA (reference)* | *186.0* | *186.0* | *186.0* | *186.0* |
 
+**MAE (MW)**
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| AR(p) by BIC | **21.0** | **65.3** | 86.6 | 99.7 |
+| LASSO | 22.3 | 67.3 | **84.2** | **94.9** |
+| post-LASSO | 22.1 | 67.5 | 84.6 | 95.5 |
+| LightGBM | 25.7 | 74.9 | 93.3 | 105.8 |
+| Random forest | 37.3 | 77.2 | 105.3 | 119.2 |
+| Bagging | 37.7 | 79.9 | 104.5 | 125.7 |
+| SARIMA | 33.3 | 163.0 | 222.8 | 237.3 |
+| Holt-Winters (HW24) | 46.8 | 193.5 | 230.8 | 229.5 |
+| Seasonal naive (168h) | 166.9 | 166.9 | 166.9 | 166.9 |
+| Seasonal naive (24h) | 219.8 | 219.8 | 219.7 | 219.6 |
+| *EMA (reference)* | *152.3* | *152.3* | *152.3* | *152.3* |
+
+**MAPE (%)**
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| AR(p) by BIC | **0.32** | **0.99** | 1.33 | 1.53 |
+| LASSO | 0.34 | 1.03 | **1.29** | **1.47** |
+| post-LASSO | 0.34 | 1.03 | 1.30 | 1.48 |
+| LightGBM | 0.39 | 1.13 | 1.42 | 1.62 |
+| Random forest | 0.57 | 1.17 | 1.61 | 1.82 |
+| Bagging | 0.58 | 1.21 | 1.59 | 1.91 |
+| SARIMA | 0.51 | 2.50 | 3.39 | 3.60 |
+| Holt-Winters (HW24) | 0.73 | 3.02 | 3.56 | 3.49 |
+| Seasonal naive (168h) | 2.58 | 2.58 | 2.58 | 2.58 |
+| Seasonal naive (24h) | 3.33 | 3.33 | 3.33 | 3.32 |
+| *EMA (reference)* | *2.31* | *2.31* | *2.31* | *2.31* |
+
+The main findings hold on all three measures:
+
 - **Short horizons (h = 1, 6):** the AR(p) with calendar dummies is hard to
   beat. LASSO and post-LASSO come within 1–3 MW of it.
 - **Longer horizons (h = 12, 24):** LASSO overtakes the AR. Its lead grows to
   about 6 MW at h = 24, and to 10 MW in the final test year (Oct 2025 –
   Sep 2026), where the ranking is the same.
 - **Tree ensembles** come in behind the linear models at every horizon.
-  LightGBM is the best of them, and random forest beats bagging.
+  LightGBM is usually the best of them, though random forest edges it on
+  RMSE at h = 6. Random forest usually beats bagging, except at h = 12 on
+  MAE and MAPE.
 - **Univariate SARIMA and Holt-Winters** only model the daily cycle. Both lose
   to the weekly seasonal-naive forecast by h = 12, and Holt-Winters already
   loses at h = 6.
 
-**Test period and Diebold-Mariano tests.** The test year runs from Oct 2025 to
-Sep 2026. In the table below, each model is tested against the AR(p)
-benchmark using squared-error loss and a Newey-West variance. A negative DM
-statistic means the model beats the AR. In each cell, the first number is
-RMSE in MW and the number in brackets is the DM statistic.
+### 5.2 Test year (Oct 2025 – Sep 2026) and Diebold-Mariano tests
+
+This covers 8,760 forecasts at each horizon. Each model is tested against the
+AR(p) benchmark using squared-error loss and a Newey-West variance, so the DM
+tests go with the RMSE table. A negative DM statistic means the model beats
+the AR.
+
+**RMSE (MW), with the DM statistic in brackets**
 
 | Model | h = 1 | h = 6 | h = 12 | h = 24 |
 |---|---|---|---|---|
@@ -169,16 +219,52 @@ RMSE in MW and the number in brackets is the DM statistic.
 \* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01. SARIMA, Holt-Winters and the
 seasonal-naive models lose to the AR at every horizon with p < 0.001.
 
+**MAE (MW)**
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| Combination | 24.1 | **67.6** | **83.8** | 92.1 |
+| post-LASSO | 25.6 | 72.5 | 86.9 | **91.2** |
+| LASSO | 25.6 | 72.6 | 87.0 | 91.5 |
+| AR(p) by BIC | **23.9** | 68.3 | 87.6 | 98.3 |
+| LightGBM | 29.4 | 79.3 | 94.9 | 109.3 |
+| Random forest | 42.2 | 83.0 | 111.3 | 121.9 |
+| Bagging | 41.2 | 84.5 | 108.7 | 129.9 |
+| SARIMA | 36.2 | 162.1 | 215.5 | 227.7 |
+| Holt-Winters (HW24) | 49.7 | 194.4 | 217.5 | 214.4 |
+| Seasonal naive (168h) | 160.5 | 160.5 | 160.5 | 160.5 |
+| Seasonal naive (24h) | 204.4 | 204.4 | 204.4 | 204.4 |
+| *EMA (reference)* | *115.4* | *115.4* | *115.4* | *115.4* |
+
+**MAPE (%)**
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| Combination | 0.33 | **0.93** | **1.16** | 1.28 |
+| post-LASSO | 0.35 | 1.00 | 1.20 | **1.27** |
+| LASSO | 0.35 | 1.00 | 1.20 | 1.28 |
+| AR(p) by BIC | **0.33** | 0.94 | 1.22 | 1.37 |
+| LightGBM | 0.41 | 1.09 | 1.30 | 1.51 |
+| Random forest | 0.58 | 1.14 | 1.54 | 1.68 |
+| Bagging | 0.57 | 1.16 | 1.51 | 1.79 |
+| SARIMA | 0.50 | 2.26 | 2.99 | 3.14 |
+| Holt-Winters (HW24) | 0.70 | 2.74 | 3.05 | 2.97 |
+| Seasonal naive (168h) | 2.25 | 2.25 | 2.25 | 2.25 |
+| Seasonal naive (24h) | 2.82 | 2.82 | 2.82 | 2.82 |
+| *EMA (reference)* | *1.63* | *1.63* | *1.63* | *1.63* |
+
 - **The combination** is the equal-weight average of LASSO, post-LASSO and
   the AR. Each member was chosen by validation RMSE (Apr–Sep 2025), so the
   test year played no part in picking them. It is the only model that
-  significantly beats the AR at every horizon.
+  significantly beats the AR at every horizon on RMSE. On MAE and MAPE it
+  also comes out on top at h = 6 and 12. At h = 1 it is level with the AR,
+  and at h = 24 post-LASSO is narrowly better.
 - **LASSO** significantly beats the AR only at h = 24 (an 8% lower RMSE).
   At h = 1 and 6 it is slightly but significantly worse than the AR.
 - **The tree ensembles** are significantly worse than the AR at every
   horizon.
 
-Full tables, with MAE, MAPE and the validation split, are in
+All the numbers above, plus the validation split, are in
 [output/tables/all_models_comparison.csv](output/tables/all_models_comparison.csv).
 The test-period metrics (including Linex loss) are in
 [test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv), and
