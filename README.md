@@ -35,7 +35,7 @@ R/
   lasso_selection.R          which predictors LASSO keeps across refits
   evaluation/
     evaluate.R               merges every model's forecasts and scores them
-    dm_and_combination.R     Diebold-Mariano tests, Linex loss, forecast combination
+    dm_and_combination.R     Diebold-Mariano tests, forecast combination
     compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
   DATA.md                    sources, coverage, conventions, known data quirks
@@ -202,8 +202,8 @@ seasonal-naive models lose to the AR at every horizon with p < 0.001.
   cycle. By h = 12, both are worse than the weekly seasonal-naive forecast.
 
 The numbers above are in
-[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv), which
-also has Linex loss. The DM tests are in
+[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv).
+The DM tests are in
 [dm_tests_all_models.csv](output/tables/dm_tests_all_models.csv). Scores for
 the full sample and the validation window, without the combination, are in
 [all_models_comparison.csv](output/tables/all_models_comparison.csv).

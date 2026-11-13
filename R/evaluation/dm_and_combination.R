@@ -1,16 +1,14 @@
 # dm_and_combination.R ---------------------------------------------------------
 #
 #   Adds what evaluate.R does not: (1) a validation-selected equal-weight combination,
-#   (2) Linex loss, (3) Diebold-Mariano tests, all on the TEST period, for every model
-#   in output/forecasts. No model fitting.
+#   (2) Diebold-Mariano tests, both on the TEST period, for every model in
+#   output/forecasts. No model fitting.
 #
 #   Combination: for each horizon the 3 non-reference models with the lowest VALIDATION
 #   RMSE (Apr-Sep 2025) are averaged with equal weights. The test period plays no part in
 #   choosing the members.
 #   DM tests: squared-error loss, Newey-West long-run variance, each model against the pre-specified
 #   benchmark, the AR(p) with calendar dummies (ar_bic). Negative statistic = row model better.
-#   Linex: L(e) = exp(a e) - a e - 1 with e = (actual - forecast) / 100 and a = 0.5, so
-#   under-forecasts (e > 0) cost more than over-forecasts.
 #
 #   in : output/forecasts/{benchmarks,lasso,lgbm}.csv.gz, sarima_holt_winters_forecast_results.csv(.zip),
 #        randomforest_bagging.zip
@@ -61,13 +59,12 @@ dm_test <- function(l1, l2, h = 1) {
   lrv <- g(0) + 2 * sum(vapply(seq_len(lag), function(k) (1 - k / (lag + 1)) * g(k), 0))
   s <- xb / sqrt(lrv / n); c(stat = s, p = 2 * pt(-abs(s), df = n - 1))
 }
-linex <- function(e, a = 0.5) { e <- e / 100; mean(exp(a * e) - a * e - 1) }
 all_m <- c(models, "combination", "ema")
 te <- d[period == "test"]
 met <- rbindlist(lapply(sort(unique(te$h)), function(hh) rbindlist(lapply(all_m, function(m) {
   x <- te[h == hh]; e <- x$actual - x[[m]]
   data.table(h = hh, model = m, n = length(e), rmse = sqrt(mean(e^2)), mae = mean(abs(e)),
-             mape = 100 * mean(abs(e) / x$actual), bias = mean(e), linex = linex(e))
+             mape = 100 * mean(abs(e) / x$actual), bias = mean(e))
 }))))
 fwrite(met, file.path(TAB, "test_metrics_all_models.csv"))
 
