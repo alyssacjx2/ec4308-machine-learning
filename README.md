@@ -2,200 +2,232 @@
 
 EC4308 Machine Learning and Economic Forecasting — Group 10.
 
-Direct multi-horizon forecasts of Singapore system demand at **h = 1, 6, 12 and
-24 hours**, comparing regularised linear methods and tree ensembles against
-time-series benchmarks on a 1.5-year rolling window with weekly refitting. See
-[Shared forecast settings](#shared-forecast-settings) — every model must use them.
+## 1. The problem
 
-**EMA's own operational forecast** sets the reference level at RMSE 179.4 MW / MAPE 2.288% over the full sample (186 MW over the 2018–2026 test period). Read that number carefully: EMA publishes one forecast per period
-and the data does not record how far ahead it was made, so it is a **near-term**
-operational forecast, not a 24-hour-ahead one. Scored against `y_h<h>` it returns
-the identical RMSE at every horizon, because each horizon is the same
-(actual, forecast) series merely shifted.
+Singapore's grid operator has to match supply to demand hour by hour, so
+accurate short-term load forecasts lower the cost of keeping reserve generation
+on standby. We ask whether machine-learning models that use weather, calendar
+and Covid-regime information can beat classical time-series forecasts of
+Singapore's hourly system demand. Each model produces direct forecasts at
+**h = 1, 6, 12 and 24 hours ahead**, using a rolling 1.5-year training window
+that is refitted every week. All models are scored on the same forecast hours,
+from 16 Jul 2018 to 30 Sep 2026, using RMSE, MAE, MAPE and Diebold-Mariano
+tests.
 
-So it is a reference level — "the accuracy achievable with near-real-time
-information" — and **not** a horizon-matched benchmark. Beating it at h = 1 is a
-fair fight; losing to it at h = 24 says nothing about the model. The
-horizon-matched comparators are **seasonal-naive and AR(p) by BIC** (see
-[Benchmarks](#benchmarks)), which degrade with h the way our models do. Stating EMA's 186 MW as a 24-hour-ahead
-benchmark in the report would invite a fair criticism.
-
----
-
-## Repository layout
+## 2. Repository structure
 
 ```
-R/                  pipeline scripts, run in the order below
+R/
+  utils.R                    shared helpers (gzip streaming, NEA timestamp handling)
+  data_processing/           raw sources -> model matrix
+    station_panel.R          picks the fixed NEA weather-station panel
+    aggregate_nea_hourly.R   raw NEA files -> hourly x station aggregates
+    build_dataset.R          merges all four sources onto one hourly spine
+    build_features.R         imputes weather gaps, builds features.csv.gz
+    explore_demand.R         standalone EDA (not part of the pipeline)
+  models/                    one script per model, all with the same forecast settings
+    benchmarks.R             seasonal naive (24h, 168h) + AR(p) by BIC
+    sarima.R, sarima_direct.R
+    holt_winters.R
+    lasso.R                  LASSO and post-LASSO (hdm::rlasso)
+    run_forests.R            random forest and bagging (ranger)
+    lgbm.R                   LightGBM
+  lasso_selection.R          which predictors LASSO keeps across refits
+  evaluation/
+    evaluate.R               merges every model's forecasts and scores them
+    dm_and_combination.R     Diebold-Mariano tests, Linex loss, forecast combination
+    compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
-  DATA.md           the four sources, coverage, conventions, 13 known quirks
-  nea_dataset_manifest.json
-data/               NOT in the repo, except as noted in DATA.md
-  raw/              as downloaded
-  interim/          hourly x station NEA aggregates (generated)
-  processed/        merged dataset and model matrix (generated)
-logs/               stdout from the long extraction and aggregation runs
-output/figures/     plots
-output/forecasts/   forecast files (generated, not committed)
+  DATA.md                    sources, coverage, conventions, known data quirks
+  FORESTS.md                 how the random forest / bagging runs were set up
+  EC4308 Group 10 Project Proposal.pdf
+data/
+  raw/                       as downloaded (not committed)
+  interim/                   hourly x station NEA aggregates (committed)
+  processed/                 merged dataset and features.csv.gz (generated)
+output/
+  forecasts/                 one file per model: one row per (origin, h)
+  tables/                    comparison tables, LASSO selection frequencies
+  figures/                   plots
 ```
 
-**Read [`docs/DATA.md`](docs/DATA.md) before touching the data.** Its "Known
-quirks" section records the traps that have already cost time: the eight-hour
-UTC shift, the netCDF axis order that silently produces constant columns, and
-the station panel changing composition mid-sample.
+## 3. Dataset and loading
 
-## Setup
+The dataset covers **85,440 contiguous hours, from 2017-01-01 to 2026-09-30**. It
+starts in 2017 because that is when usable NEA rainfall data begins.
 
-R 4.4.2. Not on PATH by default on Windows:
+| Source | Contributes |
+|---|---|
+| EMA | `demand_mw` (the target), `nem_forecast_mw` (EMA's own forecast, used only as a reference) |
+| NEA weather stations | temperature, humidity, wind speed/direction, rainfall |
+| ERA5 reanalysis | solar radiation, sensible heat flux, cloud cover, precipitation — **lagged 120 h**, because ERA5 is published about five days late |
+| MOM / time.sg | public holidays |
+
+`build_features.R` writes **`data/processed/features.csv.gz`** (85,440 rows ×
+65 columns, 54 predictors). Every model script reads this one file:
+
+```r
+library(data.table)
+f <- fread("data/processed/features.csv.gz",
+           colClasses = c(datetime = "character"))  # keep Singapore local time as text
+```
+
+- **Targets:** `y_h1`, `y_h6`, `y_h12`, `y_h24` hold the demand at t + h.
+- **Predictors:** calendar terms (`hr`, `dow`, `mth`, holidays), demand lags and
+  moving averages, weather and weather lags, cooling-degree-hours, ERA5 and
+  Covid-regime dummies. Weather gaps are interpolated or filled and flagged
+  in `imp_*`.
+- **Filter on `usable == 1 & !is.na(y_h<h>)`.** The first 169 hours have
+  incomplete lags.
+- `nem_forecast_mw` is **not** a predictor. It is carried as `nem_h<h>` for
+  comparison only.
+
+Read [docs/DATA.md](docs/DATA.md) before changing anything upstream. Its
+"Known quirks" section covers three traps: the 8-hour UTC shift when parsing
+NEA timestamps, the netCDF axis order, and the change in the station panel
+partway through the sample.
+
+## 4. Models
+
+Every model uses the same forecast settings. Otherwise the forecasts would be
+for different hours and could not be compared or DM-tested.
+
+| Setting | Value |
+|---|---|
+| Horizons | h = 1, 6, 12, 24, direct forecasting (one model per h) |
+| Training window | rolling, 1.5 years = 13,140 (origin, target) pairs |
+| Refit | every 168 hours (weekly) |
+| First forecast origin | 2018-07-16 00:00:00 |
+| No leakage | a refit at T0 uses only pairs whose target is already observed (s + h ≤ T0) |
+| Output | one row per (origin, h): `datetime`, `h`, `actual`, model column(s) |
+
+| Model | Script | Specification |
+|---|---|---|
+| Seasonal naive | `benchmarks.R` | ŷ<sub>t+h</sub> = y<sub>t+h−s</sub>, with s = 24 and s = 168 |
+| AR(p) by BIC | `benchmarks.R` | direct AR with p ∈ {24, 48, …, 168}, plus hour × day-type and Covid dummies (an ARX) |
+| SARIMA | `sarima.R` | ARIMA(p,d,q)(P,1,Q)[24]; orders chosen by AICc on the first window, coefficients re-estimated weekly |
+| Holt-Winters | `holt_winters.R` | additive, daily season (HW24); α and γ tuned separately for each horizon |
+| LASSO / post-LASSO | `lasso.R` | `hdm::rlasso` with a data-driven penalty; the 167 hour-of-week cells are left unpenalised |
+| Random forest | `run_forests.R` | 500 trees, mtry = ⌊p/3⌋ = 18, min node size 5 |
+| Bagging | `run_forests.R` | the same forest with mtry = p = 54 |
+| LightGBM | `lgbm.R` | tree count, size and loss tuned on the last 4 weeks of each window, retuned about monthly |
+| Combination | `dm_and_combination.R` | equal-weight average of the 3 models with the lowest validation RMSE (Apr–Sep 2025) |
+
+**EMA's forecast is a reference level, not a horizon-matched benchmark.** EMA
+publishes one near-term forecast per period and does not record how far ahead
+it was made, so it scores the same at every h. Beating it at h = 1 is a fair
+comparison. Losing to it at h = 24 tells us nothing about the model. The
+horizon-matched benchmarks are the seasonal-naive models and the AR(p).
+
+## 5. Results
+
+Out-of-sample RMSE in MW over all 71,952–71,975 forecast origins, 16 Jul 2018 to
+30 Sep 2026. Bold marks the best model at each horizon.
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| AR(p) by BIC | **30.1** | **88.9** | 115.0 | 130.2 |
+| LASSO | 31.3 | 91.6 | **113.1** | **124.5** |
+| post-LASSO | 31.1 | 91.7 | 113.7 | 125.7 |
+| LightGBM | 35.4 | 104.8 | 126.8 | 139.5 |
+| Random forest | 51.4 | 104.6 | 142.9 | 168.5 |
+| Bagging | 54.7 | 111.3 | 146.9 | 182.4 |
+| SARIMA | 47.5 | 229.6 | 309.9 | 323.6 |
+| Holt-Winters (HW24) | 64.6 | 250.9 | 301.6 | 332.1 |
+| Seasonal naive (168h) | 240.7 | 240.7 | 240.7 | 240.8 |
+| Seasonal naive (24h) | 338.2 | 338.2 | 338.1 | 338.0 |
+| *EMA (reference)* | *186.0* | *186.0* | *186.0* | *186.0* |
+
+- **Short horizons (h = 1, 6):** the AR(p) with calendar dummies is hard to
+  beat. LASSO and post-LASSO come within 1–3 MW of it.
+- **Longer horizons (h = 12, 24):** LASSO overtakes the AR. Its lead grows to
+  about 6 MW at h = 24, and to 10 MW in the final test year (Oct 2025 –
+  Sep 2026), where the ranking is the same.
+- **Tree ensembles** come in behind the linear models at every horizon.
+  LightGBM is the best of them, and random forest beats bagging.
+- **Univariate SARIMA and Holt-Winters** only model the daily cycle. Both lose
+  to the weekly seasonal-naive forecast by h = 12, and Holt-Winters already
+  loses at h = 6.
+
+**Test period and Diebold-Mariano tests.** The test year runs from Oct 2025 to
+Sep 2026. In the table below, each model is tested against the AR(p)
+benchmark using squared-error loss and a Newey-West variance. A negative DM
+statistic means the model beats the AR. In each cell, the first number is
+RMSE in MW and the number in brackets is the DM statistic.
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| Combination | **33.7** (−4.23\*\*\*) | **89.9** (−2.47\*\*) | **109.0** (−4.59\*\*\*) | 118.8 (−5.23\*\*\*) |
+| post-LASSO | 34.8 (1.39) | 94.8 (1.82\*) | 111.9 (−1.69\*) | **117.7** (−4.07\*\*\*) |
+| LASSO | 35.0 (1.99\*\*) | 95.0 (2.00\*\*) | 112.1 (−1.61) | 117.8 (−4.22\*\*\*) |
+| AR(p) by BIC | 34.5 | 92.3 | 114.9 | 127.7 |
+| LightGBM | 40.8 (5.57\*\*\*) | 109.7 (4.22\*\*\*) | 129.0 (3.34\*\*\*) | 144.1 (3.97\*\*\*) |
+| Random forest | 57.3 (12.24\*\*\*) | 109.6 (6.36\*\*\*) | 148.4 (8.07\*\*\*) | 169.5 (5.74\*\*\*) |
+| Bagging | 57.3 (12.01\*\*\*) | 113.3 (6.59\*\*\*) | 148.5 (7.54\*\*\*) | 186.6 (6.24\*\*\*) |
+| *EMA (reference)* | *128.6* | *128.6* | *128.6* | *128.6 (0.20)* |
+
+\* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01. SARIMA, Holt-Winters and the
+seasonal-naive models lose to the AR at every horizon with p < 0.001.
+
+- **The combination** is the equal-weight average of LASSO, post-LASSO and
+  the AR. Each member was chosen by validation RMSE (Apr–Sep 2025), so the
+  test year played no part in picking them. It is the only model that
+  significantly beats the AR at every horizon.
+- **LASSO** significantly beats the AR only at h = 24 (an 8% lower RMSE).
+  At h = 1 and 6 it is slightly but significantly worse than the AR.
+- **The tree ensembles** are significantly worse than the AR at every
+  horizon.
+
+Full tables, with MAE, MAPE and the validation split, are in
+[output/tables/all_models_comparison.csv](output/tables/all_models_comparison.csv).
+The test-period metrics (including Linex loss) are in
+[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv), and
+the DM tests are in [dm_tests_all_models.csv](output/tables/dm_tests_all_models.csv).
+
+## 6. How to run
+
+**Requirements:** R ≥ 4.4 and `gzip` on the PATH. `R/utils.R` streams the
+compressed files.
+
+```r
+install.packages(c("data.table", "R.utils", "ncdf4", "hdm", "ranger",
+                   "lightgbm", "forecast", "sandwich"))
+```
+
+Run every command from the repository root. The NEA aggregates in
+`data/interim/` are committed, so most people can start at step 3.
+
+```bash
+# data (steps 1-2 are slow and only need running once)
+Rscript R/data_processing/station_panel.R          # ~1 min
+Rscript R/data_processing/aggregate_nea_hourly.R   # ~12 min, resumable
+Rscript R/data_processing/build_dataset.R          # ~3 min
+Rscript R/data_processing/build_features.R         # ~1 min -> features.csv.gz
+
+# models (each writes to output/forecasts/; add --dry-run where supported to test quickly)
+Rscript R/models/benchmarks.R      # ~2.5 h
+Rscript R/models/lasso.R           # ~1 h
+Rscript R/models/lgbm.R            # ~45 min on 7 cores
+Rscript R/models/run_forests.R     # ~2 days (random forest + bagging together)
+Rscript R/models/sarima.R          # ~1 h
+Rscript R/models/holt_winters.R    # ~1.5 h
+
+# evaluation (no model fitting, runs in seconds)
+Rscript R/evaluation/evaluate.R
+Rscript R/evaluation/dm_and_combination.R
+```
+
+The forecasts used for the results above are already in `output/forecasts/`,
+so you can skip the model scripts and go straight to evaluation. `evaluate.R`
+reads `sarima_holt_winters_forecast_results.csv` uncompressed, so unzip it
+first:
+
+```bash
+unzip output/forecasts/sarima_holt_winters_forecast_results.zip -d output/forecasts/
+```
+
+On Windows, R is not on the PATH by default:
 
 ```powershell
 $env:Path += ";$env:LOCALAPPDATA\Programs\R\R-4.4.2\bin\x64"
 ```
-
-```r
-install.packages(c("data.table", "R.utils", "ncdf4", "hdm", "ranger"))
-```
-
-`R.utils` is required — `data.table::fread()` cannot read `.gz` without it.
-`R/utils.R` also needs **gzip**, which it locates automatically from a Git for
-Windows install; it streams compressed files rather than memory-mapping them,
-which is what makes the 44 GB of raw NEA data tractable on 6 GB of RAM.
-
-## Pipeline
-
-Run from the project root. Steps 1–2 are slow and only need running once —
-their outputs are committed, so most people can start at step 3.
-
-| # | Script | Does | Time |
-|---|---|---|---|
-| 1 | `station_panel.R` | Picks the fixed station panel → `data/processed/station_panel.csv` | ~1 min |
-| 2 | `aggregate_nea_hourly.R` | 55 raw NEA files → hourly × station in `data/interim/` | ~12 min |
-| 3 | `build_dataset.R` | Merges all four sources onto one hourly spine | ~3 min |
-| 4 | `build_features.R` | Imputes weather gaps, builds the model matrix | ~1 min |
-| 5 | `benchmarks.R` | Seasonal naive + AR(p) by BIC → `output/forecasts/benchmarks.csv.gz` | ~2.5 h |
-| 6 | `forecast.R` | Rolling-window engine — **not written yet** | — |
-| 7 | `evaluate.R` | RMSE/MAE/MAPE, Diebold-Mariano, combination — **not written yet** | — |
-
-`view_benchmarks.R` prints the benchmark error tables and redraws the figures
-from the saved forecasts in seconds; rerun `benchmarks.R` only when its code
-changes.
-
-```bash
-Rscript R/build_dataset.R
-Rscript R/build_features.R
-```
-
-`aggregate_nea_hourly.R` is resumable — it skips variable-years already present
-in `data/interim/`, so an interrupted run can simply be restarted.
-
-`explore_demand.R` is standalone EDA on the demand series and is not part of the
-pipeline.
-
-## Dataset
-
-`build_dataset.R` produces **85,440 contiguous hours, 2017-01-01 to 2026-09-30**.
-The sample starts in 2017 because usable rainfall does (the 2016 NEA rainfall
-file holds only 2–3 December).
-
-| Source | Contributes |
-|---|---|
-| EMA | `demand_mw` (target), `nem_forecast_mw` (benchmark) |
-| NEA stations | temperature, humidity, wind speed/direction, rainfall |
-| ERA5 | solar radiation, sensible heat flux, cloud cover, precipitation — **lagged 120h** |
-| MOM/time.sg | public holidays, gazetted vs observed |
-
-The **120-hour ERA5 lag** is deliberate: ERA5 reanalysis publishes about five
-days late, so a model standing at time *t* genuinely cannot see it. Set
-`ERA5_LAG <- 0L` in `build_dataset.R` to treat it as contemporaneous — defensible
-for an ex-post study, but it would overstate real-time accuracy.
-
-`build_features.R` then adds calendar terms, demand lags and trailing means,
-cooling-degree-hours, weather lags, and phased Covid dummies. Two choices worth
-knowing about:
-
-- **Hour × day-of-week interactions are not materialised.** 168 near-empty
-  columns per row is wasteful; `hr` and `dow` stay as integers and `forecast.R`
-  expands them per window with `model.matrix()`.
-- **`nem_forecast_mw` is not a predictor.** It is the headline benchmark, so
-  feeding it in as an input would make "can ML beat EMA's forecast"
-  unanswerable. It travels as `nem_h<h>` — the benchmark's own prediction of the
-  same target hour — and nothing else.
-
-Weather gaps (1.3–2.5%, concentrated in a few multi-day NEA outages) are
-interpolated when ≤ 6 hours, filled with a month-by-hour climatology when longer,
-and flagged in `imp_<var>` either way. The target has no missing hours at all, so
-no fill rule can leak into forecast accuracy through `y`. Reasoning and the
-bounded in-sample leak are documented in the script header.
-
-## What's in `features.csv.gz`
-
-85,440 rows × 65 columns. **`forecast.R` loads this file and nothing else.**
-
-| Group | Columns |
-|---|---|
-| Key | `datetime` (Asia/Singapore local string), `y` (demand MW at t) |
-| Targets | `y_h1`, `y_h6`, `y_h12`, `y_h24` — demand at t+h |
-| Benchmark | `nem_h1/6/12/24` — EMA's forecast of that same target hour |
-| Calendar | `hr`, `dow` (0 = Sun), `mth`, `doy`, `year`, `t_index`, `is_weekend`, `is_holiday`, `is_workday` |
-| Demand history | `dem_lag1/2/3/24/25/48/168/169`, `dem_ma3/24/168`, `dem_d1`, `dem_d24` |
-| Weather | `temp_c`, `humidity_pct`, `wind_speed_kt`, `wind_sin`, `wind_cos`, `rain_mm` |
-| Weather derived | `cdh` (cooling-degree-hours, base 24 °C), `temp_sq`, `temp_lag1/24`, `rain_lag1/2/3`, `temp_ma24/72`, `rain_ma24` |
-| ERA5 (lagged 120h) | `era5_ssrd_wm2`, `era5_fdir_wm2`, `era5_sshf_wm2`, `era5_tcc`, `era5_tp_mm` |
-| Covid | `cb_strict`, `cb_p1`, `cb_p2`, `cb_p3`, `ha_2021` — mutually exclusive |
-| Imputation flags | `imp_temp_c`, `imp_humidity_pct`, `imp_wind_speed_kt`, `imp_wind_dir_deg`, `imp_rain_mm`, `imp_any` |
-| Row filter | `usable` |
-
-54 predictors in total, before the hour × day-of-week interactions are expanded.
-
-**Filter on `usable == 1 & !is.na(y_h<h>)`.** `usable` covers features only — it
-excludes the first 169 hours, whose lags are incomplete — while `y_h24` is also
-NA for the final 24 rows. Usable counts run 85,270 at h = 1 down to 85,247 at
-h = 24.
-
-Two things to know when reading coefficients:
-
-- `wind_dir_deg` is **not** a column. It enters as `wind_sin`/`wind_cos`, because
-  359° and 1° are adjacent on the compass but maximally far apart as raw numbers.
-  `imp_wind_dir_deg` still flags where it was filled.
-- **Climatological rainfall is never exactly zero** (filled cells span
-  0.02–1.59 mm) where the observed series is zero in 68% of hours. Those 2,154
-  hours lose their zero-inflation structure; `imp_rain_mm` marks them.
-
-## Shared forecast settings
-
-Every model uses these, or its forecasts are for different hours and cannot be
-compared or Diebold-Mariano tested. They are set at the top of `benchmarks.R`.
-
-| Setting | Value |
-|---|---|
-| Horizons | h = 1, 6, 12, 24 — direct forecasting, one model per h |
-| Training window | rolling, **1.5 years = 13,140 hours** of (origin, target) pairs |
-| Refit | every **168 hours** (weekly) |
-| First forecast origin | **2018-07-16 00:00:00**, the first Monday with a full window and 168 lags behind it; runs to the end of the data |
-| No leakage | at a refit at origin T0, train only on pairs whose target y<sub>s+h</sub> is observed, i.e. s + h ≤ T0 |
-| Output | one row per (origin, h): `datetime` (the origin), `h`, `actual` = y<sub>t+h</sub>, then one column per model |
-
-## Benchmarks
-
-`benchmarks.R`
-
-- **Seasonal naive**, ŷ<sub>t+h</sub> = y<sub>t+h−s</sub>, with a daily (s = 24)
-  and a weekly (s = 168) season. Nothing is estimated.
-- **AR(p) by BIC**, direct: y<sub>t+h</sub> on y<sub>t</sub>, …, y<sub>t−p+1</sub>,
-  p ∈ {24, 48, …, 168} (1 day to 1 week) re-selected at every refit, plus
-  dummies for the **target** hour: 23 hour-of-day, 6 day-type (public holiday =
-  Sunday), their 138 hour × day-type interactions, and the Covid regimes. The
-  dummies make it strictly an ARX — not a demand-only benchmark.
-
-Out-of-sample RMSE (MW), 16 Jul 2018 – 30 Sep 2026:
-
-| h | snaive24 | snaive168 | AR(p) | EMA (reference) |
-|---|---|---|---|---|
-| 1 | 338 | 241 | **30** | 186 |
-| 6 | 338 | 241 | **89** | 186 |
-| 12 | 338 | 241 | **115** | 186 |
-| 24 | 338 | 241 | **130** | 186 |
-
-The interactions cut the AR's RMSE by 16–29% against hour and day-type dummies
-alone (DM significant at every h) and removed the weekend/Monday pattern from
-its errors (`output/figures/error_by_hour_of_week.png`). BIC then settles on a
-median p = 72 (range 24–168). A full run takes ~2.5 hours.
