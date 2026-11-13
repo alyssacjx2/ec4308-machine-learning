@@ -10,9 +10,9 @@ on standby. We ask whether machine-learning models that use weather, calendar
 and Covid-regime information can beat classical time-series forecasts of
 Singapore's hourly system demand. Each model produces direct forecasts at
 **h = 1, 6, 12 and 24 hours ahead**, using a rolling 1.5-year training window
-that is refitted every week. All models are scored on the same forecast hours,
-from 16 Jul 2018 to 30 Sep 2026, using RMSE, MAE, MAPE and Diebold-Mariano
-tests.
+that is refitted every week. Forecasts run from 16 Jul 2018. Every model is scored on the
+same held-out test year (Oct 2025 – Sep 2026), using RMSE, MAE, MAPE and
+Diebold-Mariano tests.
 
 ## 2. Repository structure
 
@@ -129,77 +129,12 @@ marks the best model at each horizon (EMA excluded).
 - **MAPE** (mean absolute percentage error, %) is the typical miss as a share
   of demand.
 
-### 5.1 Full sample (16 Jul 2018 – 30 Sep 2026)
+Every model produces forecasts from 16 Jul 2018 onward. The results below are
+for the **test year (Oct 2025 – Sep 2026)**, which has 8,760 forecasts at
+each horizon. The test year comes after the Apr–Sep 2025 validation window
+that was used to pick the combination's members.
 
-This covers 71,952–71,975 forecast origins at each horizon.
-
-**RMSE (MW)**
-
-| Model | h = 1 | h = 6 | h = 12 | h = 24 |
-|---|---|---|---|---|
-| AR(p) by BIC | **30.1** | **88.9** | 115.0 | 130.2 |
-| LASSO | 31.3 | 91.6 | **113.1** | **124.5** |
-| post-LASSO | 31.1 | 91.7 | 113.7 | 125.7 |
-| LightGBM | 35.4 | 104.8 | 126.8 | 139.5 |
-| Random forest | 51.4 | 104.6 | 142.9 | 168.5 |
-| Bagging | 54.7 | 111.3 | 146.9 | 182.4 |
-| SARIMA | 47.5 | 229.6 | 309.9 | 323.6 |
-| Holt-Winters (HW24) | 64.6 | 250.9 | 301.6 | 332.1 |
-| Seasonal naive (168h) | 240.7 | 240.7 | 240.7 | 240.8 |
-| Seasonal naive (24h) | 338.2 | 338.2 | 338.1 | 338.0 |
-| *EMA (reference)* | *186.0* | *186.0* | *186.0* | *186.0* |
-
-**MAE (MW)**
-
-| Model | h = 1 | h = 6 | h = 12 | h = 24 |
-|---|---|---|---|---|
-| AR(p) by BIC | **21.0** | **65.3** | 86.6 | 99.7 |
-| LASSO | 22.3 | 67.3 | **84.2** | **94.9** |
-| post-LASSO | 22.1 | 67.5 | 84.6 | 95.5 |
-| LightGBM | 25.7 | 74.9 | 93.3 | 105.8 |
-| Random forest | 37.3 | 77.2 | 105.3 | 119.2 |
-| Bagging | 37.7 | 79.9 | 104.5 | 125.7 |
-| SARIMA | 33.3 | 163.0 | 222.8 | 237.3 |
-| Holt-Winters (HW24) | 46.8 | 193.5 | 230.8 | 229.5 |
-| Seasonal naive (168h) | 166.9 | 166.9 | 166.9 | 166.9 |
-| Seasonal naive (24h) | 219.8 | 219.8 | 219.7 | 219.6 |
-| *EMA (reference)* | *152.3* | *152.3* | *152.3* | *152.3* |
-
-**MAPE (%)**
-
-| Model | h = 1 | h = 6 | h = 12 | h = 24 |
-|---|---|---|---|---|
-| AR(p) by BIC | **0.32** | **0.99** | 1.33 | 1.53 |
-| LASSO | 0.34 | 1.03 | **1.29** | **1.47** |
-| post-LASSO | 0.34 | 1.03 | 1.30 | 1.48 |
-| LightGBM | 0.39 | 1.13 | 1.42 | 1.62 |
-| Random forest | 0.57 | 1.17 | 1.61 | 1.82 |
-| Bagging | 0.58 | 1.21 | 1.59 | 1.91 |
-| SARIMA | 0.51 | 2.50 | 3.39 | 3.60 |
-| Holt-Winters (HW24) | 0.73 | 3.02 | 3.56 | 3.49 |
-| Seasonal naive (168h) | 2.58 | 2.58 | 2.58 | 2.58 |
-| Seasonal naive (24h) | 3.33 | 3.33 | 3.33 | 3.32 |
-| *EMA (reference)* | *2.31* | *2.31* | *2.31* | *2.31* |
-
-The main findings hold on all three measures:
-
-- **Short horizons (h = 1, 6):** the AR(p) with calendar dummies is hard to
-  beat. LASSO and post-LASSO come within 1–3 MW of it.
-- **Longer horizons (h = 12, 24):** LASSO overtakes the AR. Its lead grows to
-  about 6 MW at h = 24, and to 10 MW in the final test year (Oct 2025 –
-  Sep 2026), where the ranking is the same.
-- **Tree ensembles** come in behind the linear models at every horizon.
-  LightGBM is usually the best of them, though random forest edges it on
-  RMSE at h = 6. Random forest usually beats bagging, except at h = 12 on
-  MAE and MAPE.
-- **Univariate SARIMA and Holt-Winters** only model the daily cycle. Both lose
-  to the weekly seasonal-naive forecast by h = 12, and Holt-Winters already
-  loses at h = 6.
-
-### 5.2 Test year (Oct 2025 – Sep 2026) and Diebold-Mariano tests
-
-This covers 8,760 forecasts at each horizon. Each model is tested against the
-AR(p) benchmark using squared-error loss and a Newey-West variance, so the DM
+Each model is tested against the AR(p) benchmark using squared-error loss and a Newey-West variance, so the DM
 tests go with the RMSE table. A negative DM statistic means the model beats
 the AR.
 
@@ -262,13 +197,16 @@ seasonal-naive models lose to the AR at every horizon with p < 0.001.
 - **LASSO** significantly beats the AR only at h = 24 (an 8% lower RMSE).
   At h = 1 and 6 it is slightly but significantly worse than the AR.
 - **The tree ensembles** are significantly worse than the AR at every
-  horizon.
+  horizon. LightGBM is the best of them on MAE and MAPE at every horizon.
+- **SARIMA and Holt-Winters** use demand alone and model only the daily
+  cycle. By h = 12, both are worse than the weekly seasonal-naive forecast.
 
-All the numbers above, plus the validation split, are in
-[output/tables/all_models_comparison.csv](output/tables/all_models_comparison.csv).
-The test-period metrics (including Linex loss) are in
-[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv), and
-the DM tests are in [dm_tests_all_models.csv](output/tables/dm_tests_all_models.csv).
+The numbers above are in
+[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv), which
+also has Linex loss. The DM tests are in
+[dm_tests_all_models.csv](output/tables/dm_tests_all_models.csv). Scores for
+the full sample and the validation window, without the combination, are in
+[all_models_comparison.csv](output/tables/all_models_comparison.csv).
 
 ## 6. How to run
 
