@@ -78,5 +78,5 @@ dm <- rbindlist(lapply(sort(unique(te$h)), function(hh) {
   }))
 }))
 fwrite(dm, file.path(TAB, "dm_tests_all_models.csv"))
-options(width = 200); print(dcast(met, model ~ h, value.var = "rmse")[order(`24`)])
+options(width = 200); print(dcast(met, model ~ h, value.var = "mape")[order(`24`)])
 print(dm[, .(h, model, benchmark, DM_se = round(DM_se, 2), p_se = signif(p_se, 2))])

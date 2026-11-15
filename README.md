@@ -11,8 +11,8 @@ and Covid-regime information can beat classical time-series forecasts of
 Singapore's hourly system demand. Each model produces direct forecasts at
 **h = 1, 6, 12 and 24 hours ahead**, using a rolling 1.5-year training window
 that is refitted every week. Forecasts run from 16 Jul 2018. Every model is scored on the
-same held-out test year (Oct 2025 – Sep 2026), using RMSE, MAE, MAPE and
-Diebold-Mariano tests.
+same held-out test year (Oct 2025 – Sep 2026). MAPE is the headline forecast
+metric. RMSE carries the Diebold-Mariano tests, and MAE is reported alongside.
 
 ## 2. Repository structure
 
@@ -124,19 +124,43 @@ horizon-matched benchmarks are the seasonal-naive models and the AR(p).
 We report three error measures. Lower is better on all of them, and bold
 marks the best model at each horizon (EMA excluded).
 
-- **RMSE** (root mean squared error, MW) punishes large misses heavily.
-- **MAE** (mean absolute error, MW) is the typical miss in megawatts.
 - **MAPE** (mean absolute percentage error, %) is the typical miss as a share
-  of demand.
+  of demand. It is our headline forecast metric because it shows the scale of
+  the errors.
+- **RMSE** (root mean squared error, MW) punishes large misses heavily. It is
+  the loss behind the Diebold-Mariano tests.
+- **MAE** (mean absolute error, MW) is the typical miss in megawatts.
+
+Model selection and validation (LightGBM tuning, the combination's members)
+use MAE or RMSE. MAPE is used only to report the final results.
 
 Every model produces forecasts from 16 Jul 2018 onward. The results below are
 for the **test year (Oct 2025 – Sep 2026)**, which has 8,760 forecasts at
 each horizon. The test year comes after the Apr–Sep 2025 validation window
 that was used to pick the combination's members.
 
-Each model is tested against the AR(p) benchmark using squared-error loss and a Newey-West variance, so the DM
-tests go with the RMSE table. A negative DM statistic means the model beats
-the AR.
+**MAPE (%)**
+
+| Model | h = 1 | h = 6 | h = 12 | h = 24 |
+|---|---|---|---|---|
+| Combination | 0.33 | **0.93** | **1.16** | 1.28 |
+| post-LASSO | 0.35 | 1.00 | 1.20 | **1.27** |
+| LASSO | 0.35 | 1.00 | 1.20 | 1.28 |
+| AR(p) by BIC | **0.33** | 0.94 | 1.22 | 1.37 |
+| LightGBM | 0.41 | 1.09 | 1.30 | 1.51 |
+| Random forest | 0.48 | 1.14 | 1.33 | 1.44 |
+| Bagging | 0.47 | 1.24 | 1.42 | 1.52 |
+| SARIMA | 0.50 | 2.26 | 2.99 | 3.14 |
+| Holt-Winters (HW24) | 0.70 | 2.74 | 3.05 | 2.97 |
+| Seasonal naive (168h) | 2.25 | 2.25 | 2.25 | 2.25 |
+| Seasonal naive (24h) | 2.82 | 2.82 | 2.82 | 2.82 |
+| *EMA (reference)* | *1.63* | *1.63* | *1.63* | *1.63* |
+
+At h = 1 the AR's MAPE (0.327) is just below the combination's (0.330).
+
+Each model is tested against the AR(p) benchmark using squared-error loss and
+a Newey-West variance, so the DM tests go with the RMSE table. A negative DM
+statistic means the model beats the AR.
 
 **RMSE (MW), with the DM statistic in brackets**
 
@@ -147,8 +171,8 @@ the AR.
 | LASSO | 35.0 (1.99\*\*) | 95.0 (2.00\*\*) | 112.1 (−1.61) | 117.8 (−4.22\*\*\*) |
 | AR(p) by BIC | 34.5 | 92.3 | 114.9 | 127.7 |
 | LightGBM | 40.8 (5.57\*\*\*) | 109.7 (4.22\*\*\*) | 129.0 (3.34\*\*\*) | 144.1 (3.97\*\*\*) |
-| Random forest | 57.3 (12.24\*\*\*) | 109.6 (6.36\*\*\*) | 148.4 (8.07\*\*\*) | 169.5 (5.74\*\*\*) |
-| Bagging | 57.3 (12.01\*\*\*) | 113.3 (6.59\*\*\*) | 148.5 (7.54\*\*\*) | 186.6 (6.24\*\*\*) |
+| Random forest | 48.8 (8.93\*\*\*) | 115.3 (5.49\*\*\*) | 131.1 (3.79\*\*\*) | 136.8 (2.44\*\*) |
+| Bagging | 47.8 (10.94\*\*\*) | 128.5 (5.57\*\*\*) | 145.7 (4.72\*\*\*) | 148.6 (4.13\*\*\*) |
 | *EMA (reference)* | *128.6* | *128.6* | *128.6* | *128.6 (0.20)* |
 
 \* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01. SARIMA, Holt-Winters and the
@@ -163,41 +187,25 @@ seasonal-naive models lose to the AR at every horizon with p < 0.001.
 | LASSO | 25.6 | 72.6 | 87.0 | 91.5 |
 | AR(p) by BIC | **23.9** | 68.3 | 87.6 | 98.3 |
 | LightGBM | 29.4 | 79.3 | 94.9 | 109.3 |
-| Random forest | 42.2 | 83.0 | 111.3 | 121.9 |
-| Bagging | 41.2 | 84.5 | 108.7 | 129.9 |
+| Random forest | 35.1 | 83.4 | 96.8 | 103.9 |
+| Bagging | 34.3 | 90.2 | 103.7 | 110.0 |
 | SARIMA | 36.2 | 162.1 | 215.5 | 227.7 |
 | Holt-Winters (HW24) | 49.7 | 194.4 | 217.5 | 214.4 |
 | Seasonal naive (168h) | 160.5 | 160.5 | 160.5 | 160.5 |
 | Seasonal naive (24h) | 204.4 | 204.4 | 204.4 | 204.4 |
 | *EMA (reference)* | *115.4* | *115.4* | *115.4* | *115.4* |
 
-**MAPE (%)**
-
-| Model | h = 1 | h = 6 | h = 12 | h = 24 |
-|---|---|---|---|---|
-| Combination | 0.33 | **0.93** | **1.16** | 1.28 |
-| post-LASSO | 0.35 | 1.00 | 1.20 | **1.27** |
-| LASSO | 0.35 | 1.00 | 1.20 | 1.28 |
-| AR(p) by BIC | **0.33** | 0.94 | 1.22 | 1.37 |
-| LightGBM | 0.41 | 1.09 | 1.30 | 1.51 |
-| Random forest | 0.58 | 1.14 | 1.54 | 1.68 |
-| Bagging | 0.57 | 1.16 | 1.51 | 1.79 |
-| SARIMA | 0.50 | 2.26 | 2.99 | 3.14 |
-| Holt-Winters (HW24) | 0.70 | 2.74 | 3.05 | 2.97 |
-| Seasonal naive (168h) | 2.25 | 2.25 | 2.25 | 2.25 |
-| Seasonal naive (24h) | 2.82 | 2.82 | 2.82 | 2.82 |
-| *EMA (reference)* | *1.63* | *1.63* | *1.63* | *1.63* |
-
 - **The combination** is the equal-weight average of LASSO, post-LASSO and
   the AR. Each member was chosen by validation RMSE (Apr–Sep 2025), so the
   test year played no part in picking them. It is the only model that
-  significantly beats the AR at every horizon on RMSE. On MAE and MAPE it
+  significantly beats the AR at every horizon on RMSE. On MAPE and MAE it
   also comes out on top at h = 6 and 12. At h = 1 it is level with the AR,
   and at h = 24 post-LASSO is narrowly better.
 - **LASSO** significantly beats the AR only at h = 24 (an 8% lower RMSE).
   At h = 1 and 6 it is slightly but significantly worse than the AR.
 - **The tree ensembles** are significantly worse than the AR at every
-  horizon. LightGBM is the best of them on MAE and MAPE at every horizon.
+  horizon. LightGBM is the best of them on every metric at h = 1, 6 and 12;
+  the random forest is the best of them at h = 24.
 - **SARIMA and Holt-Winters** use demand alone and model only the daily
   cycle. By h = 12, both are worse than the weekly seasonal-naive forecast.
 

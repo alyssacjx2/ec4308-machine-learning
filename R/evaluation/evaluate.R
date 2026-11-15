@@ -107,8 +107,8 @@ EvaluateForecasts <- function() {
   cat("Matched demand differences:", unlist(actual_checks), "\n")
   print(coverage)
   for (sample_name in c("all", "test")) {
-    cat("\nRMSE (MW), sample:", sample_name, "\n")
-    print(dcast(scores[sample == sample_name], h ~ model, value.var = "rmse_mw"))
+    cat("\nMAPE (%), sample:", sample_name, "\n")
+    print(dcast(scores[sample == sample_name], h ~ model, value.var = "mape_pct"))
     cat("\nBest non-reference model per horizon:\n")
     print(scores[sample == sample_name & rank_rmse == 1L,
                  .(h, model, n, rmse_mw, mae_mw, mape_pct,
