@@ -58,7 +58,11 @@ origin_time <- setdiff(
     grep("^(y_h|nem_h)", names(f), value = TRUE)))
 
 X_org   <- cbind(y_t = y, as.matrix(f[, ..origin_time]))
-hd      <- f$hr * 7L + f$dow
+# Cells are built from DAY TYPE, not the raw weekday: a public holiday takes the
+# Sunday profile. Must stay in step with lasso.R, or this describes a different
+# model from the one that produced the forecasts.
+dtype   <- fifelse(f$is_holiday == 1L, 0L, f$dow)   # 0 = Sunday
+hd      <- f$hr * 7L + dtype
 tt_keep <- setdiff(target_time, c("hr", "dow"))
 X_pen   <- cbind(X_org, as.matrix(f[, ..tt_keep]))
 invisible(gc(verbose = FALSE))

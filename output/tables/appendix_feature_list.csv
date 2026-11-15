@@ -1,0 +1,54 @@
+group,variable,description
+Calendar,doy,day of year
+Calendar,is_holiday,gazetted or observed public holiday
+Calendar,is_weekend,Saturday or Sunday
+Calendar,is_workday,neither weekend nor holiday
+Calendar,mth,month
+Calendar,t_index,linear time index
+Calendar,year,calendar year
+Covid regime,cb_p1,reopening phase 1
+Covid regime,cb_p2,reopening phase 2
+Covid regime,cb_p3,reopening phase 3
+Covid regime,cb_strict,"circuit breaker, 7 Apr - 1 Jun 2020"
+Covid regime,ha_2021,heightened alert 2021
+Demand history,dem_d1,"demand change, t minus t-1"
+Demand history,dem_d24,"demand change, t minus t-24"
+Demand history,dem_lag1,demand at t-1
+Demand history,dem_lag168,demand at t-168
+Demand history,dem_lag169,demand at t-169
+Demand history,dem_lag2,demand at t-2
+Demand history,dem_lag24,demand at t-24
+Demand history,dem_lag25,demand at t-25
+Demand history,dem_lag3,demand at t-3
+Demand history,dem_lag48,demand at t-48
+Demand history,dem_ma168,"mean demand, t-167..t"
+Demand history,dem_ma24,"mean demand, t-23..t"
+Demand history,dem_ma3,"mean demand, t-2..t"
+Demand history,y_t,demand at the forecast origin t
+ERA5 (lagged 120h),era5_fdir_wm2,direct solar radiation
+ERA5 (lagged 120h),era5_sshf_wm2,surface sensible heat flux
+ERA5 (lagged 120h),era5_ssrd_wm2,surface solar radiation downwards
+ERA5 (lagged 120h),era5_tcc,total cloud cover
+ERA5 (lagged 120h),era5_tp_mm,total precipitation
+Missingness flags,imp_any,any weather variable imputed
+Missingness flags,imp_humidity_pct,humidity imputed
+Missingness flags,imp_rain_mm,rainfall imputed
+Missingness flags,imp_temp_c,temperature imputed
+Missingness flags,imp_wind_dir_deg,wind direction imputed
+Missingness flags,imp_wind_speed_kt,wind speed imputed
+Weather (station),cdh,"cooling degree hours, max(temp-24,0)"
+Weather (station),humidity_pct,"relative humidity, 10-station mean"
+Weather (station),rain_lag1,rainfall at t-1
+Weather (station),rain_lag2,rainfall at t-2
+Weather (station),rain_lag3,rainfall at t-3
+Weather (station),rain_ma24,"mean rainfall, t-23..t"
+Weather (station),rain_mm,"rainfall, 35-station mean"
+Weather (station),temp_c,"air temperature, 10-station mean"
+Weather (station),temp_lag1,temperature at t-1
+Weather (station),temp_lag24,temperature at t-24
+Weather (station),temp_ma24,"mean temperature, t-23..t"
+Weather (station),temp_ma72,"mean temperature, t-71..t"
+Weather (station),temp_sq,temperature squared
+Weather (station),wind_cos,cosine of wind direction
+Weather (station),wind_sin,sine of wind direction
+Weather (station),wind_speed_kt,"wind speed, 10-station mean"
