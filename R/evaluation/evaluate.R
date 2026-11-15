@@ -19,12 +19,7 @@ EvaluateForecasts <- function() {
   seasonal <- fread(file.path(input, "sarima_holt_winters_forecast_results.csv"),
                     colClasses = c(origin = "character",
                                    target_datetime = "character"))
-  temporary <- tempfile("forecast-evaluation-")
-  dir.create(temporary)
-  on.exit(unlink(temporary, recursive = TRUE), add = TRUE)
-  unzip(file.path(input, "randomforest_bagging.zip"), files = "forecasts.csv",
-        exdir = temporary)
-  forest <- fread(file.path(temporary, "forecasts.csv"),
+  forest <- read_gz(file.path(input, "rf_bagging.csv.gz"),
                    colClasses = c(datetime = "character",
                                   target_datetime = "character"))
   setnames(seasonal, "origin", "datetime")
@@ -112,8 +107,8 @@ EvaluateForecasts <- function() {
   cat("Matched demand differences:", unlist(actual_checks), "\n")
   print(coverage)
   for (sample_name in c("all", "test")) {
-    cat("\nRMSE (MW), sample:", sample_name, "\n")
-    print(dcast(scores[sample == sample_name], h ~ model, value.var = "rmse_mw"))
+    cat("\nMAPE (%), sample:", sample_name, "\n")
+    print(dcast(scores[sample == sample_name], h ~ model, value.var = "mape_pct"))
     cat("\nBest non-reference model per horizon:\n")
     print(scores[sample == sample_name & rank_rmse == 1L,
                  .(h, model, n, rmse_mw, mae_mw, mape_pct,

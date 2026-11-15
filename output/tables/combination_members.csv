@@ -1,0 +1,5 @@
+h,members
+1,post_lasso+lasso+ar_bic
+6,post_lasso+lasso+ar_bic
+12,lasso+post_lasso+ar_bic
+24,lasso+post_lasso+ar_bic

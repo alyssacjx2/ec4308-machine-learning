@@ -19,7 +19,9 @@
 #   out: output/forecasts/holt_winters.csv.gz
 #        output/tables/holt_winters_params_by_refit.csv   alpha, gamma per refit and horizon
 #
-#   Rscript R/holt_winters.R            full run (about 1.5 hours on 2 cores)
+#   Rscript R/holt_winters.R            full run (about 1.5 hours on 2 cores), daily season M = 24
+#   Rscript R/holt_winters.R --period=168   weekly season: 168 hourly adjustments (one per
+#                                       hour of the week); writes holt_winters168.csv.gz, column hw168
 #   Rscript R/holt_winters.R --dry-run  3 refits only, writes *_dryrun files (to check the code)
 #
 # Output shape matches lasso.R / benchmarks.csv.gz exactly: one row per (forecast origin,
@@ -37,16 +39,20 @@ WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training d
 REFIT     <- 168L                       # refit every week
 OOS_START <- "2018-07-16 00:00:00"      # first forecast origin: the first Monday
                                         # with a full window behind it
-M         <- 24L                        # seasonal period (hours)
-INIT_LEN  <- 2L * 168L                  # first two weeks of each window set the starting states
+args      <- commandArgs(trailingOnly = TRUE)
+M         <- as.integer(sub("^--period=", "", grep("^--period=", args, value = TRUE)[1]))
+if (is.na(M)) M <- 24L                  # seasonal period (hours): --period=24 (daily, default) or --period=168 (weekly)
+INIT_LEN  <- max(2L * 168L, 4L * M)     # first weeks of each window set the starting states (2 weeks for M = 24, 4 for M = 168)
 N_CORES   <- as.integer(Sys.getenv("N_CORES", max(1L, parallel::detectCores() - 1L)))
 
 # Smoke test: number of refits to run. Inf = full run. `--dry-run` sets it to 3.
 MAX_REFITS <- Inf
-DRY <- "--dry-run" %in% commandArgs(trailingOnly = TRUE)
+DRY <- "--dry-run" %in% args
 if (DRY) MAX_REFITS <- 3L
 SFX <- if (DRY) "_dryrun" else ""
-OUT <- paste0("output/forecasts/holt_winters", SFX, ".csv.gz")
+TAG <- if (M == 24L) "" else as.character(M)   # M = 24 keeps the original file names
+OUT <- paste0("output/forecasts/holt_winters", TAG, SFX, ".csv.gz")
+COL <- paste0("hw", M)
 TAB <- "output/tables"
 
 # mclapply forks, which Windows cannot do, so fall back to a plain loop there.
@@ -137,23 +143,25 @@ out <- rbindlist(lapply(seq_along(H), function(j) {
   t    <- unlist(lapply(res, `[[`, "t"))
   pred <- unlist(lapply(res, function(r) r$pred[, j]))
   keep <- t <= N - H[j]                          # last h origins have no y_{t+h}
-  data.table(datetime = f$datetime[t[keep]], h = H[j], actual = y[t[keep] + H[j]], hw24 = pred[keep])
+  d <- data.table(datetime = f$datetime[t[keep]], h = H[j], actual = y[t[keep] + H[j]])
+  d[[COL]] <- pred[keep]
+  d
 }))
-if (anyNA(out$hw24)) warning(sum(is.na(out$hw24)), " NA forecasts left in the output")
+if (anyNA(out[[COL]])) warning(sum(is.na(out[[COL]])), " NA forecasts left in the output")
 
 if (!dir.exists(dirname(OUT))) dir.create(dirname(OUT), recursive = TRUE)
 if (!dir.exists(TAB)) dir.create(TAB, recursive = TRUE)
 fwrite(out, OUT)
 fwrite(rbindlist(lapply(res, function(r) data.table(refit_origin = f$datetime[r$T0], h = H,
                                                     alpha = r$par[, 1], gamma = r$par[, 2]))),
-       file.path(TAB, paste0("holt_winters_params_by_refit", SFX, ".csv")))
+       file.path(TAB, paste0("holt_winters", TAG, "_params_by_refit", SFX, ".csv")))
 
 cat("\n=== out-of-sample error summary ===\n")
 for (hh in H) {
-  s <- out[h == hh & !is.na(hw24)]
+  s <- out[h == hh & !is.na(out[[COL]])]
   if (!nrow(s)) next
+  e <- s$actual - s[[COL]]
   cat(sprintf("  h=%2d  n=%s  RMSE %6.1f  MAE %6.1f  MAPE %.3f%%\n", hh, format(nrow(s), big.mark = ","),
-      sqrt(mean((s$actual - s$hw24)^2)), mean(abs(s$actual - s$hw24)),
-      100 * mean(abs(s$actual - s$hw24) / s$actual)))
+      sqrt(mean(e^2)), mean(abs(e)), 100 * mean(abs(e) / s$actual)))
 }
 cat("\nwritten:", OUT, "\n")
