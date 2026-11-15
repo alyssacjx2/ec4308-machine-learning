@@ -11,7 +11,7 @@
 #   benchmark, the AR(p) with calendar dummies (ar_bic). Negative statistic = row model better.
 #
 #   in : output/forecasts/{benchmarks,lasso,lgbm}.csv.gz, sarima_holt_winters_forecast_results.csv(.zip),
-#        randomforest_bagging.zip
+#        rf_bagging.csv.gz
 #   out: output/tables/test_metrics_all_models.csv, output/tables/dm_tests_all_models.csv
 #
 #   Rscript R/evaluation/dm_and_combination.R
@@ -29,8 +29,7 @@ if (!file.exists(sz)) unzip(file.path(FC, "sarima_holt_winters_forecast_results.
 sh <- fread(if (file.exists(sz)) sz else file.path(tmp, "sarima_holt_winters_forecast_results.csv"),
             colClasses = c(origin = "character", target_datetime = "character"))
 setnames(sh, "origin", "datetime")
-unzip(file.path(FC, "randomforest_bagging.zip"), files = "forecasts.csv", exdir = tmp)
-fo <- fread(file.path(tmp, "forecasts.csv"), colClasses = c(datetime = "character", target_datetime = "character"))
+fo <- read_gz(file.path(FC, "rf_bagging.csv.gz"), colClasses = c(datetime = "character", target_datetime = "character"))
 setnames(fo, c("horizon", "actual_mw", "rf_forecast_mw", "bagging_forecast_mw"), c("h", "actual", "random_forest", "bagging"))
 
 d <- Reduce(function(a, b) merge(a, b, by = c("datetime", "h")),

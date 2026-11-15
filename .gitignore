@@ -23,6 +23,7 @@ output/forecasts/**
 # evaluate.R has to merge every model's file, so they need to reach one place.
 # Commit these only once a model's settings are final, not after exploratory runs.
 !output/forecasts/*.csv.gz
+!output/checkpoints/
 
 # Extraction gap logs
 logs/**
