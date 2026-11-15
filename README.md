@@ -28,7 +28,9 @@ R/
   models/                    one script per model, all with the same forecast settings
     benchmarks.R             seasonal naive (24h, 168h) + AR(p) by BIC
     sarima.R, sarima_direct.R
+    sarima_direct_holiday.R  per-horizon SARIMA, 24h or 168h season, holiday adjustment
     holt_winters.R
+    holt_winters_holiday.R   Holt-Winters, 24h or 168h season, holiday adjustment
     lasso.R                  LASSO and post-LASSO (hdm::rlasso)
     run_forests.R            random forest and bagging (ranger)
     lgbm.R                   LightGBM
@@ -36,6 +38,7 @@ R/
   evaluation/
     evaluate.R               merges every model's forecasts and scores them
     dm_and_combination.R     Diebold-Mariano tests, forecast combination
+    combination_scenarios_and_gr.R   combination with the extra variants, Granger-Ramanathan weights
     compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
   DATA.md                    sources, coverage, conventions, known data quirks
@@ -216,6 +219,97 @@ The DM tests are in
 the full sample and the validation window, without the combination, are in
 [all_models_comparison.csv](output/tables/all_models_comparison.csv).
 
+### 5.1 Holiday-adjusted and weekly-season SARIMA / Holt-Winters
+
+`sarima_direct_holiday.R` and `holt_winters_holiday.R` re-run the two
+classical models with a separate fit for each horizon, a choice of daily
+(24 h) or weekly (168 h) season, and (`_hol`) a weekday public-holiday
+adjustment. The SARIMA rows here are the per-horizon fits, so they differ
+from the SARIMA row in the tables above. Test year, Holm-adjusted DM tests
+against the AR (squared error, 20 Newey-West lags):
+
+| Model | MAPE h = 1 / 6 / 12 / 24 | RMSE h = 1 / 6 / 12 / 24 |
+|---|---|---|
+| SARIMA (24h) | 0.50 / 2.14 / 2.73 / 2.87 | 51.6 / 216.6 / 281.2 / 273.2 |
+| SARIMA (24h) + holiday | 0.50 / 2.10 / 2.64 / 2.78 | 51.6 / 210.8 / 270.2 / 262.1 |
+| SARIMA (168h) | 0.43 / 1.34 / 1.70 / 1.91 | 47.6 / 150.8 / 188.5 / 200.9 |
+| SARIMA (168h) + holiday | 0.43 / 1.16 / 1.42 / 1.63 | 46.9 / 116.9 / 138.6 / 152.2 |
+| Holt-Winters (24h) + holiday | 0.69 / 2.52 / 2.94 / 2.91 | 65.7 / 229.2 / 272.7 / 295.9 |
+| Holt-Winters (168h) | 0.45 / 1.29 / 1.46 / 1.61 | 45.4 / 135.5 / 149.8 / 163.2 |
+| Holt-Winters (168h) + holiday | 0.43 / 1.05 / **1.19** / **1.33** | 43.4 / 100.1 / 111.1 / 123.0 |
+| *AR(p) by BIC, for reference* | *0.33 / 0.94 / 1.22 / 1.37* | *34.5 / 92.3 / 114.9 / 127.7* |
+
+- **The weekly season matters most.** Moving from a 24 h to a 168 h season
+  roughly halves the error of both models at h ≥ 6.
+- **The holiday adjustment helps further**, mostly at h ≥ 6.
+- **Weekly Holt-Winters with holidays** uses demand alone, yet it has a lower
+  MAPE and MAE than the AR at h = 12 and 24 (MAE 84.6 vs 87.6 MW and 95.0 vs
+  98.3 MW). Its RMSE is also lower there, but the DM tests cannot tell it
+  apart from the AR (Holm p = 0.44). Every other variant is significantly
+  worse than the AR at every horizon.
+
+Adding these eight variants to the candidate pool ("scenario B") does not
+change the equal-weight combination: LASSO, post-LASSO and the AR still have
+the lowest validation RMSE at every horizon. Scores and tests are in
+`test_metrics_A_B.zip`, `dm_tests_holm_A_B.zip` and
+`combination_members_A_B.zip` in [output/tables/](output/tables/).
+
+### 5.2 Granger-Ramanathan combination weights
+
+`combination_scenarios_and_gr.R` replaces the equal weights with weights
+estimated by regressing actual demand on the member forecasts over the
+validation window (Apr–Sep 2025). Three versions are fitted: no intercept
+(`noint`), weights summing to one (`sum1`), and with an intercept (`int`).
+Each is fitted on three pools: the equal-weight combination's 3 members
+(`top3`), all 10 original models (A), and A plus the 8 variants above (B).
+Best versions, test year:
+
+| Combination | MAPE h = 1 / 6 / 12 / 24 | RMSE h = 1 / 6 / 12 / 24 |
+|---|---|---|
+| Equal weights, top 3 (Section 5) | 0.330 / 0.932 / 1.158 / 1.282 | 33.7 / 89.9 / 109.0 / 118.8 |
+| GR no intercept, top 3 | 0.343 / 0.934 / 1.140 / **1.254** | 34.3 / 89.6 / 107.7 / **117.1** |
+| GR no intercept, pool A | 0.326 / 0.882 / 1.095 / 1.262 | 32.8 / 86.7 / 106.3 / 118.1 |
+| GR no intercept, pool B | **0.326** / **0.873** / **1.089** / 1.280 | **32.8** / **86.3** / **104.3** / 119.3 |
+
+- **GR weights over the full pool B** give the lowest errors of any forecast
+  in the project at h = 6 and 12. At h = 1 they tie with GR over pool A
+  (the version with an intercept is lower by 0.05 MW). They significantly beat both the AR
+  (all h) and the equal-weight combination (h = 1, 6, 12; Holm p = 3×10⁻¹⁰,
+  0.012, 0.026). At h = 24 they are no better than equal weights.
+- **GR over the top 3 alone is unstable.** LASSO and post-LASSO are almost
+  collinear, so the weights move to extremes (at h = 1: post-LASSO 1.40,
+  LASSO −0.54, AR 0.14). It is significantly worse than equal weights at h = 1,
+  although it gives the best h = 24 forecast.
+- An intercept helps only marginally at h = 1 and hurts at longer horizons.
+  The sum-to-one constraint is slightly worse than leaving the weights free.
+
+Metrics, weights and DM tests (20 and 168 lags, Holm-adjusted) are in
+`granger_ramanathan_metrics.zip`, `granger_ramanathan_weights.zip` and
+`granger_ramanathan_dm.zip` in [output/tables/](output/tables/).
+
+### 5.3 What LASSO selects
+
+`lasso_selection.R` refits LASSO at every 10th weekly origin (43 refits per
+horizon) and records which predictors it keeps. Its hour-of-week cells now use
+day type, so a public holiday takes the Sunday profile, as in `lasso.R`.
+
+- **Demand terms dominate.** The 168 h moving average is kept in every refit
+  at every horizon, and current demand (`y_t`) in 81–100%. The 24 h moving
+  average is always kept up to h = 12 but only in about half the refits at
+  h = 24.
+- **Temperature matters more as the horizon grows.** At h = 1 only the
+  one-hour lag is always kept. From h = 6 the 24 h and 72 h moving averages
+  are kept in 88–100% of refits and carry the largest weather coefficients.
+- **Rainfall and wind** (current rainfall, wind speed and direction) are kept
+  in 74–100% of refits at every horizon, and `is_holiday` in 74–93%.
+- Between 16 (h = 1) and 22 (h = 12, 24) predictors are kept in at least half
+  the refits.
+
+Frequencies and average standardised coefficients are in
+[lasso_selection_frequency.csv](output/tables/lasso_selection_frequency.csv).
+[appendix_feature_list.csv](output/tables/appendix_feature_list.csv) describes
+every predictor.
+
 ## 6. How to run
 
 **Requirements:** R ≥ 4.4 and `gzip` on the PATH. `R/utils.R` streams the
@@ -247,6 +341,8 @@ Rscript R/models/holt_winters.R    # ~1.5 h
 # evaluation (no model fitting, runs in seconds)
 Rscript R/evaluation/evaluate.R
 Rscript R/evaluation/dm_and_combination.R
+Rscript R/evaluation/combination_scenarios_and_gr.R   # reads both SARIMA/HW zips directly
+Rscript R/lasso_selection.R                           # ~5 min, refits LASSO on a subsample
 ```
 
 The forecasts used for the results above are already in `output/forecasts/`,
