@@ -262,26 +262,44 @@ validation window (Apr–Sep 2025). Three versions are fitted: no intercept
 (`noint`), weights summing to one (`sum1`), and with an intercept (`int`).
 Each is fitted on three pools: the equal-weight combination's 3 members
 (`top3`), all 10 original models (A), and A plus the 8 variants above (B).
-Best versions, test year:
+As with the rest of the project, the version is **chosen on validation
+RMSE**, and MAPE is used only to report the test year. Validation picks the
+intercept version for every pool at every horizon, and pool B has the lowest
+validation RMSE at every horizon. The table shows the intercept version for
+each pool:
 
 | Combination | MAPE h = 1 / 6 / 12 / 24 | RMSE h = 1 / 6 / 12 / 24 |
 |---|---|---|
-| Equal weights, top 3 (Section 5) | 0.330 / 0.932 / 1.158 / 1.282 | 33.7 / 89.9 / 109.0 / 118.8 |
-| GR no intercept, top 3 | 0.343 / 0.934 / 1.140 / **1.254** | 34.3 / 89.6 / 107.7 / **117.1** |
-| GR no intercept, pool A | 0.326 / 0.882 / 1.095 / 1.262 | 32.8 / 86.7 / 106.3 / 118.1 |
-| GR no intercept, pool B | **0.326** / **0.873** / **1.089** / 1.280 | **32.8** / **86.3** / **104.3** / 119.3 |
+| Equal weights, top 3 (Section 5) | 0.330 / 0.932 / 1.158 / **1.282** | 33.7 / 89.9 / 109.0 / **118.8** |
+| GR, top 3 | 0.342 / 0.971 / 1.253 / 1.299 | 34.2 / 92.4 / 115.6 / 120.4 |
+| GR, pool A | 0.325 / **0.895** / 1.127 / 1.290 | 32.7 / **87.8** / 108.3 / 120.2 |
+| **GR, pool B (validation choice)** | **0.325** / 0.902 / **1.121** / 1.302 | **32.7** / 88.6 / **106.3** / 121.2 |
 
-- **GR weights over the full pool B** give the lowest errors of any forecast
-  in the project at h = 6 and 12. At h = 1 they tie with GR over pool A
-  (the version with an intercept is lower by 0.05 MW). They significantly beat both the AR
-  (all h) and the equal-weight combination (h = 1, 6, 12; Holm p = 3×10⁻¹⁰,
-  0.012, 0.026). At h = 24 they are no better than equal weights.
+- **The validation choice (GR, pool B)** has a lower MAPE than equal weights
+  at h = 1, 6 and 12, and a higher MAPE at h = 24. On the RMSE DM test
+  (Holm-adjusted, 20 lags), it significantly beats equal weights only at
+  h = 1 (p < 0.001), and it beats the AR at h = 1 and 12. At h = 6 and 24 it
+  cannot be told apart from either the AR or equal weights.
 - **GR over the top 3 alone is unstable.** LASSO and post-LASSO are almost
-  collinear, so the weights move to extremes (at h = 1: post-LASSO 1.40,
-  LASSO −0.54, AR 0.14). It is significantly worse than equal weights at h = 1,
-  although it gives the best h = 24 forecast.
-- An intercept helps only marginally at h = 1 and hurts at longer horizons.
-  The sum-to-one constraint is slightly worse than leaving the weights free.
+  collinear, so the weights move to extremes (at h = 1: post-LASSO 1.43,
+  LASSO −0.58, AR 0.15). It is worse than equal weights at every horizon.
+- The weights barely change from validation to test, but the intercept
+  does not carry over well. The no-intercept versions score better on the
+  test year (MAPE 0.873 and 1.089 at h = 6 and 12 for pool B), but
+  validation would not have picked them, so we do not report them as results.
+
+**Effect on the overall evaluation.** The main ranking in Section 5 still
+holds. The combination's members (LASSO, post-LASSO, AR) do not change when
+the new SARIMA/Holt-Winters variants are added, because they still have the
+lowest validation RMSE. The tree ensembles, and every SARIMA/Holt-Winters
+variant except weekly Holt-Winters with holidays, remain significantly worse
+than the AR. The two changes are:
+
+1. Estimating the combination weights (GR, pool B) improves on equal weights
+   at h = 1 to 12, but significantly so only at h = 1. Equal weights remain
+   the better combination at h = 24.
+2. A pure time-series model, weekly Holt-Winters with holidays, now matches
+   the AR at h = 12 and 24.
 
 Metrics, weights and DM tests (20 and 168 lags, Holm-adjusted) are in
 `granger_ramanathan_metrics.zip`, `granger_ramanathan_weights.zip` and
