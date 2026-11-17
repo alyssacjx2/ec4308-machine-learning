@@ -1,0 +1,13 @@
+h,ranking_metric,members,same_as_rmse
+1,rmse,ar_bic+lasso+post_lasso,TRUE
+1,mae,ar_bic+lasso+post_lasso,TRUE
+1,mape,ar_bic+lasso+post_lasso,TRUE
+6,rmse,ar_bic+lasso+post_lasso,TRUE
+6,mae,ar_bic+lasso+post_lasso,TRUE
+6,mape,ar_bic+lasso+post_lasso,TRUE
+12,rmse,ar_bic+lasso+post_lasso,TRUE
+12,mae,ar_bic+lasso+post_lasso,TRUE
+12,mape,ar_bic+lasso+post_lasso,TRUE
+24,rmse,ar_bic+lasso+post_lasso,TRUE
+24,mae,ar_bic+lasso+post_lasso,TRUE
+24,mape,ar_bic+lasso+post_lasso,TRUE
