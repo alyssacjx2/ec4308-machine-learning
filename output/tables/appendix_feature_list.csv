@@ -1,54 +1,77 @@
-group,variable,description
-Calendar,doy,day of year
-Calendar,is_holiday,gazetted or observed public holiday
-Calendar,is_weekend,Saturday or Sunday
-Calendar,is_workday,neither weekend nor holiday
-Calendar,mth,month
-Calendar,t_index,linear time index
-Calendar,year,calendar year
-Covid regime,cb_p1,reopening phase 1
-Covid regime,cb_p2,reopening phase 2
-Covid regime,cb_p3,reopening phase 3
-Covid regime,cb_strict,"circuit breaker, 7 Apr - 1 Jun 2020"
-Covid regime,ha_2021,heightened alert 2021
-Demand history,dem_d1,"demand change, t minus t-1"
-Demand history,dem_d24,"demand change, t minus t-24"
-Demand history,dem_lag1,demand at t-1
-Demand history,dem_lag168,demand at t-168
-Demand history,dem_lag169,demand at t-169
-Demand history,dem_lag2,demand at t-2
-Demand history,dem_lag24,demand at t-24
-Demand history,dem_lag25,demand at t-25
-Demand history,dem_lag3,demand at t-3
-Demand history,dem_lag48,demand at t-48
-Demand history,dem_ma168,"mean demand, t-167..t"
-Demand history,dem_ma24,"mean demand, t-23..t"
-Demand history,dem_ma3,"mean demand, t-2..t"
-Demand history,y_t,demand at the forecast origin t
-ERA5 (lagged 120h),era5_fdir_wm2,direct solar radiation
-ERA5 (lagged 120h),era5_sshf_wm2,surface sensible heat flux
-ERA5 (lagged 120h),era5_ssrd_wm2,surface solar radiation downwards
-ERA5 (lagged 120h),era5_tcc,total cloud cover
-ERA5 (lagged 120h),era5_tp_mm,total precipitation
-Missingness flags,imp_any,any weather variable imputed
-Missingness flags,imp_humidity_pct,humidity imputed
-Missingness flags,imp_rain_mm,rainfall imputed
-Missingness flags,imp_temp_c,temperature imputed
-Missingness flags,imp_wind_dir_deg,wind direction imputed
-Missingness flags,imp_wind_speed_kt,wind speed imputed
-Weather (station),cdh,"cooling degree hours, max(temp-24,0)"
-Weather (station),humidity_pct,"relative humidity, 10-station mean"
-Weather (station),rain_lag1,rainfall at t-1
-Weather (station),rain_lag2,rainfall at t-2
-Weather (station),rain_lag3,rainfall at t-3
-Weather (station),rain_ma24,"mean rainfall, t-23..t"
-Weather (station),rain_mm,"rainfall, 35-station mean"
-Weather (station),temp_c,"air temperature, 10-station mean"
-Weather (station),temp_lag1,temperature at t-1
-Weather (station),temp_lag24,temperature at t-24
-Weather (station),temp_ma24,"mean temperature, t-23..t"
-Weather (station),temp_ma72,"mean temperature, t-71..t"
-Weather (station),temp_sq,temperature squared
-Weather (station),wind_cos,cosine of wind direction
-Weather (station),wind_sin,sine of wind direction
-Weather (station),wind_speed_kt,"wind speed, 10-station mean"
+group,variable,description,equation,used_by,horizons,information_time,kind,notes,source_script
+Calendar,ar_daytype_dummies,6 target-day-type indicators,"B_d[u]=1{d_star(u)=d}, d=1,...,6; d_star(u)=0 on holidays, otherwise weekday(u)",AR (BIC),1; 6; 12; 24,Known target calendar,design block,Public holidays take the Sunday profile.,R/models/benchmarks.R
+Calendar,ar_hour_daytype_interactions,138 target-hour by day-type interactions,"A_r[u]*B_d[u], r=1,...,23; d=1,...,6; u=t+h",AR (BIC),1; 6; 12; 24,Known target calendar,design block,"With main effects and intercept, spans 168 hour/day-type cells.",R/models/benchmarks.R
+Calendar,ar_hour_dummies,23 target-hour indicators,"A_r[u]=1{hour(u)=r}, r=1,...,23; u=t+h",AR (BIC),1; 6; 12; 24,Known target calendar,design block,Reference hour is 00:00.,R/models/benchmarks.R
+Calendar,dow,Origin weekday,weekday(t),LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Weekday codes: Sunday=0,...,Saturday=6. Trees treat dow as categorical.",R/data_processing/build_features.R
+Calendar,dow_tgt,Target weekday,weekday(t+h),LightGBM; random forest; bagging,1; 6; 12; 24,Known target calendar,predictor,Categorical weekday with separate holiday/workday flags; holidays are not recoded as Sundays.,R/models/forest_features.R; R/models/lgbm.R
+Calendar,doy,day of year,"day_of_year(v); v=t+h for LASSO/post-LASSO, v=t for trees",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for LASSO/post-LASSO; origin t for trees,predictor,"",R/data_processing/build_features.R
+Calendar,holiday_tgt,Target public holiday,1{date(t+h) is a public holiday},LightGBM; random forest; bagging,1; 6; 12; 24,Known target calendar,predictor,"",R/models/forest_features.R; R/models/lgbm.R
+Calendar,hr,Origin hour,hour(t),LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Weekday codes: Sunday=0,...,Saturday=6. Trees treat dow as categorical.",R/data_processing/build_features.R
+Calendar,hr_tgt,Target hour,hour(t+h),LightGBM; random forest; bagging,1; 6; 12; 24,Known target calendar,predictor,"",R/models/forest_features.R; R/models/lgbm.R
+Calendar,is_holiday,gazetted or observed public holiday,"J[v]=1{date(v) is a gazetted or observed public holiday}; v=t+h for LASSO/post-LASSO, v=t for trees",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for LASSO/post-LASSO; origin t for trees,predictor,"Tree target holiday is also supplied separately as holiday_tgt. AR handles holidays through day type, not this standalone column.",R/data_processing/build_features.R
+Calendar,is_weekend,Saturday or Sunday,"1{weekday(v) in {0,6}}; v=t+h for LASSO/post-LASSO, v=t for trees",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for LASSO/post-LASSO; origin t for trees,predictor,"",R/data_processing/build_features.R
+Calendar,is_workday,neither weekend nor holiday,"1{weekday(v) not in {0,6} and J[v]=0}; v=t+h for LASSO/post-LASSO, v=t for trees",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for LASSO/post-LASSO; origin t for trees,predictor,"",R/data_processing/build_features.R
+Calendar,lasso_hour_daytype_cells,168 unpenalised target-hour by day-type cells,"1{hour(u)=r and d_star(u)=d}, r=0,...,23; d=0,...,6; u=t+h",LASSO; post-LASSO,1; 6; 12; 24,Known target calendar,design block,"Holiday-adjusted day type; partialled out, not 168 additional penalised predictors.",R/models/lasso.R
+Calendar,mth,month,"month(v); v=t+h for LASSO/post-LASSO, v=t for trees",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for LASSO/post-LASSO; origin t for trees,predictor,"",R/data_processing/build_features.R
+Calendar,t_index,linear time index,tau(t+h),LASSO; post-LASSO,1; 6; 12; 24,Known target index,predictor,tau is the sequential hourly row index from the start of the dataset; excluded from the tree design.,R/data_processing/build_features.R
+Calendar,weekday_holiday_part1,Weekday holiday in hours 00-05,"x_1[v]=1{J[v]=1 and weekday(v) in {1,...,5} and floor(hour(v)/6)+1=1}",SARIMA-direct with holidays; Holt-Winters with holidays,1; 6; 12; 24,Known origin and target calendar,predictor,SARIMA uses seasonal differences x[v]-x[v-S]; HW adjusts filtering at t and adds the target holiday effect. Non-holiday variants omit these four regressors.,R/models/sarima_direct_holiday.R; R/models/holt_winters_holiday.R
+Calendar,weekday_holiday_part2,Weekday holiday in hours 06-11,"x_2[v]=1{J[v]=1 and weekday(v) in {1,...,5} and floor(hour(v)/6)+1=2}",SARIMA-direct with holidays; Holt-Winters with holidays,1; 6; 12; 24,Known origin and target calendar,predictor,SARIMA uses seasonal differences x[v]-x[v-S]; HW adjusts filtering at t and adds the target holiday effect. Non-holiday variants omit these four regressors.,R/models/sarima_direct_holiday.R; R/models/holt_winters_holiday.R
+Calendar,weekday_holiday_part3,Weekday holiday in hours 12-17,"x_3[v]=1{J[v]=1 and weekday(v) in {1,...,5} and floor(hour(v)/6)+1=3}",SARIMA-direct with holidays; Holt-Winters with holidays,1; 6; 12; 24,Known origin and target calendar,predictor,SARIMA uses seasonal differences x[v]-x[v-S]; HW adjusts filtering at t and adds the target holiday effect. Non-holiday variants omit these four regressors.,R/models/sarima_direct_holiday.R; R/models/holt_winters_holiday.R
+Calendar,weekday_holiday_part4,Weekday holiday in hours 18-23,"x_4[v]=1{J[v]=1 and weekday(v) in {1,...,5} and floor(hour(v)/6)+1=4}",SARIMA-direct with holidays; Holt-Winters with holidays,1; 6; 12; 24,Known origin and target calendar,predictor,SARIMA uses seasonal differences x[v]-x[v-S]; HW adjusts filtering at t and adds the target holiday effect. Non-holiday variants omit these four regressors.,R/models/sarima_direct_holiday.R; R/models/holt_winters_holiday.R
+Calendar,workday_tgt,Target workday,"1{weekday(t+h) not in {0,6} and J[t+h]=0}",LightGBM; random forest; bagging,1; 6; 12; 24,Known target calendar,predictor,"",R/models/forest_features.R; R/models/lgbm.R
+Calendar,year,calendar year,year(t+h),LASSO; post-LASSO,1; 6; 12; 24,Known target calendar,predictor,Excluded from the tree design.,R/data_processing/build_features.R
+Covid regime,cb_p1,reopening phase 1,"1{date(v) in [2020-06-02,2020-06-18]}",AR (BIC); LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for AR/LASSO/post-LASSO; origin t for trees,predictor,Intervals inclusive. Target-time COVID indicators assume the regime was known at the origin.,R/data_processing/build_features.R
+Covid regime,cb_p2,reopening phase 2,"1{date(v) in [2020-06-19,2020-12-27]}",AR (BIC); LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for AR/LASSO/post-LASSO; origin t for trees,predictor,Intervals inclusive. Target-time COVID indicators assume the regime was known at the origin.,R/data_processing/build_features.R
+Covid regime,cb_p3,reopening phase 3,"1{date(v) in [2020-12-28,2021-05-15]}",AR (BIC); LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for AR/LASSO/post-LASSO; origin t for trees,predictor,Intervals inclusive. Target-time COVID indicators assume the regime was known at the origin.,R/data_processing/build_features.R
+Covid regime,cb_strict,"circuit breaker, 7 Apr - 1 Jun 2020","1{date(v) in [2020-04-07,2020-06-01]}",AR (BIC); LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for AR/LASSO/post-LASSO; origin t for trees,predictor,Intervals inclusive. Target-time COVID indicators assume the regime was known at the origin.,R/data_processing/build_features.R
+Covid regime,ha_2021,heightened alert 2021,"1{date(v) in [2021-05-16,2021-06-13] union [2021-07-22,2021-08-18]}",AR (BIC); LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Target t+h for AR/LASSO/post-LASSO; origin t for trees,predictor,Intervals inclusive. Target-time COVID indicators assume the regime was known at the origin.,R/data_processing/build_features.R
+Demand history,ar_lag_block,"BIC-selected consecutive AR lags, in addition to current demand","y[t-j], j=1,...,p-1; p in {24,48,72,96,120,144,168}",AR (BIC),1; 6; 12; 24,Origin t,design block,Block size depends on selected p; not the fixed engineered demand-lag list.,R/models/benchmarks.R
+Demand history,dem_d1,"demand change, t minus t-1",y[t]-y[t-1],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Demand history,dem_d24,"demand change, t minus t-24",y[t]-y[t-24],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Demand history,dem_lag1,demand at t-1,y[t-1],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag168,demand at t-168,y[t-168],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag169,demand at t-169,y[t-169],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag2,demand at t-2,y[t-2],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag24,demand at t-24,y[t-24],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag25,demand at t-25,y[t-25],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag3,demand at t-3,y[t-3],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_lag48,demand at t-48,y[t-48],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"AR uses its separate BIC-selected consecutive lag block, not this fixed engineered block.",R/data_processing/build_features.R
+Demand history,dem_ma168,"mean demand, t-167..t","(1/168) * sum(y[t-j], j=0,...,167)",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Demand history,dem_ma24,"mean demand, t-23..t","(1/24) * sum(y[t-j], j=0,...,23)",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Demand history,dem_ma3,"mean demand, t-2..t","(1/3) * sum(y[t-j], j=0,...,2)",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Demand history,dem_tgt_1d,Demand at the target clock hour on the previous day,y[t+h-24],LightGBM; random forest; bagging,1; 6; 12,Historical demand known by origin t,predictor,At h=24 this equals y[t] and is omitted as a duplicate.,R/models/forest_features.R; R/models/lgbm.R
+Demand history,dem_tgt_1w,Demand at the target clock hour one week earlier,y[t+h-168],LightGBM; random forest; bagging,1; 6; 12; 24,Historical demand known by origin t,predictor,"",R/models/forest_features.R; R/models/lgbm.R
+Demand history,holt_winters_history,Observed demand updating level and seasonal states,"Demand observations through t; seasonal period M in {24,168}",Holt-Winters; Holt-Winters with holidays,1; 6; 12; 24,Origin t,history input,Holiday variants additionally use four holiday regressors.,R/models/holt_winters.R; R/models/holt_winters_holiday.R
+Demand history,sarima_history,Observed demand and recursively updated error state,"Demand observations through t; seasonal period S in {24,168}",SARIMA; SARIMA-direct; SARIMA-direct with holidays,1; 6; 12; 24,Origin t,history input,Univariate variants add no external predictors; holiday variants additionally use four holiday regressors.,R/models/sarima.R; R/models/sarima_direct.R; R/models/sarima_direct_holiday.R
+Demand history,seasonal_naive168_input,Previous-week target-aligned demand,forecast[t+h|t]=y[t+h-168],Seasonal naive (168 h),1; 6; 12; 24,Origin t,forecast input,"",R/models/benchmarks.R
+Demand history,seasonal_naive24_input,Previous-day target-aligned demand,forecast[t+h|t]=y[t+h-24],Seasonal naive (24 h),1; 6; 12; 24,Origin t,forecast input,"",R/models/benchmarks.R
+Demand history,y,demand at the forecast origin t,y[t],AR (BIC); LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Column y in features.csv.gz; aliased y_t in LASSO. Known at the origin, not the future target.",R/data_processing/build_features.R
+ERA5 (lagged 120h),era5_fdir_wm2,direct solar radiation,"max(E_fdir[t-120],0)/3600",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,ERA5 observation dated t-120 hours,predictor,ERA5 grid-cell mean; assumed five-day publication delay. Fluxes: J/m^2 to W/m^2; precipitation: m to mm; cloud cover unchanged.,R/data_processing/build_dataset.R; R/data_processing/build_features.R
+ERA5 (lagged 120h),era5_sshf_wm2,surface sensible heat flux,E_sshf[t-120]/3600,LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,ERA5 observation dated t-120 hours,predictor,ERA5 grid-cell mean; assumed five-day publication delay. Fluxes: J/m^2 to W/m^2; precipitation: m to mm; cloud cover unchanged.,R/data_processing/build_dataset.R; R/data_processing/build_features.R
+ERA5 (lagged 120h),era5_ssrd_wm2,surface solar radiation downwards,"max(E_ssrd[t-120],0)/3600",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,ERA5 observation dated t-120 hours,predictor,ERA5 grid-cell mean; assumed five-day publication delay. Fluxes: J/m^2 to W/m^2; precipitation: m to mm; cloud cover unchanged.,R/data_processing/build_dataset.R; R/data_processing/build_features.R
+ERA5 (lagged 120h),era5_tcc,total cloud cover,E_tcc[t-120],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,ERA5 observation dated t-120 hours,predictor,ERA5 grid-cell mean; assumed five-day publication delay. Fluxes: J/m^2 to W/m^2; precipitation: m to mm; cloud cover unchanged.,R/data_processing/build_dataset.R; R/data_processing/build_features.R
+ERA5 (lagged 120h),era5_tp_mm,total precipitation,1000*E_tp[t-120],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,ERA5 observation dated t-120 hours,predictor,ERA5 grid-cell mean; assumed five-day publication delay. Fluxes: J/m^2 to W/m^2; precipitation: m to mm; cloud cover unchanged.,R/data_processing/build_dataset.R; R/data_processing/build_features.R
+Forecast combination,equal_weight_component_forecasts,Forecasts from three validation-selected members,forecast_comb[t+h|t]=(1/3)*sum_m forecast_m[t+h|t],Equal-weight combination,1; 6; 12; 24,Origin t,forecast input,Members selected by validation RMSE separately by horizon; no new raw predictors.,R/evaluation/dm_and_combination.R; R/evaluation/combination_scenarios_and_gr.R
+Forecast combination,gr_component_forecasts,Candidate forecasts combined using validation-fitted OLS weights,forecast_GR[t+h|t]=a+sum_m w_m*forecast_m[t+h|t],Granger-Ramanathan combination,1; 6; 12; 24,Origin t,forecast input,a=0 in no-intercept/sum-to-one variants; component sets and weights vary by scheme and horizon.,R/evaluation/combination_scenarios_and_gr.R
+Missingness flags,imp_any,any weather variable imputed,1{sum_v imp_v[t] > 0},LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Any of the five station-weather variables required imputation.,R/data_processing/build_features.R
+Missingness flags,imp_humidity_pct,humidity imputed,1{humidity_pct[t] was missing before imputation},LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Marks filled aggregate weather values; does not remove future-information leakage from two-sided/full-sample imputation.,R/data_processing/build_features.R
+Missingness flags,imp_rain_mm,rainfall imputed,1{rain_mm[t] was missing before imputation},LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Marks filled aggregate weather values; does not remove future-information leakage from two-sided/full-sample imputation.,R/data_processing/build_features.R
+Missingness flags,imp_temp_c,temperature imputed,1{temp_c[t] was missing before imputation},LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Marks filled aggregate weather values; does not remove future-information leakage from two-sided/full-sample imputation.,R/data_processing/build_features.R
+Missingness flags,imp_wind_dir_deg,wind direction imputed,1{wind_dir_deg[t] was missing before imputation},LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Marks filled aggregate weather values; does not remove future-information leakage from two-sided/full-sample imputation.,R/data_processing/build_features.R
+Missingness flags,imp_wind_speed_kt,wind speed imputed,1{wind_speed_kt[t] was missing before imputation},LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Marks filled aggregate weather values; does not remove future-information leakage from two-sided/full-sample imputation.,R/data_processing/build_features.R
+Weather (station),cdh,"cooling degree hours, max(temp-24,0)","max(T[t]-24,0)",LASSO; post-LASSO,1; 6; 12; 24,Origin t,predictor,Temperature excess above 24 degrees Celsius; not a sum over past hours. Excluded from the tree design.,R/data_processing/build_features.R
+Weather (station),humidity_pct,"relative humidity, 10-station mean",H[t],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Selected core-station mean of relative humidity, in percent.",R/data_processing/build_features.R
+Weather (station),rain_lag1,rainfall at t-1,R[t-1],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),rain_lag2,rainfall at t-2,R[t-2],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),rain_lag3,rainfall at t-3,R[t-3],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),rain_ma24,"mean rainfall, t-23..t","(1/24) * sum(R[t-j], j=0,...,23)",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),rain_mm,"rainfall, 35-station mean",R[t],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Rainfall summed within station/hour, then averaged across selected rainfall stations; millimetres.",R/data_processing/build_features.R
+Weather (station),temp_c,"air temperature, 10-station mean",T[t],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Selected core-station mean of temperature, in degrees Celsius.",R/data_processing/build_features.R
+Weather (station),temp_lag1,temperature at t-1,T[t-1],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),temp_lag24,temperature at t-24,T[t-24],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),temp_ma24,"mean temperature, t-23..t","(1/24) * sum(T[t-j], j=0,...,23)",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),temp_ma72,"mean temperature, t-71..t","(1/72) * sum(T[t-j], j=0,...,71)",LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"",R/data_processing/build_features.R
+Weather (station),temp_sq,temperature squared,T[t]^2,LASSO; post-LASSO,1; 6; 12; 24,Origin t,predictor,Excluded from the LightGBM-aligned tree design.,R/data_processing/build_features.R
+Weather (station),wind_cos,cosine of wind direction,cos(pi * theta[t]/180),LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,Pairs with wind_sin to preserve circular direction.,R/data_processing/build_features.R
+Weather (station),wind_sin,sine of wind direction,sin(pi * theta[t]/180),LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,theta is wind direction in degrees; circular aggregation is applied before feature construction.,R/data_processing/build_features.R
+Weather (station),wind_speed_kt,"wind speed, 10-station mean",V[t],LASSO; post-LASSO; LightGBM; random forest; bagging,1; 6; 12; 24,Origin t,predictor,"Selected core-station mean of wind speed, in knots.",R/data_processing/build_features.R

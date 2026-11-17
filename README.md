@@ -128,25 +128,13 @@ it was made, so it scores the same at every h. Even at h = 1 its information lea
 should not be interpreted as a formally matched-horizon comparison. The
 horizon-matched benchmarks are the seasonal-naive models and the AR(p).
 
-## 5. Results
+## 5. Results and the report-aligned tests
 
-We report three error measures. Lower is better on all of them, and bold
-marks the best model at each horizon (EMA excluded).
-
-- **MAPE** (mean absolute percentage error, %) is the typical miss as a share
-  of demand. It is our headline forecast metric because it shows the scale of
-  the errors.
-- **RMSE** (root mean squared error, MW) punishes large misses heavily. It is
-  the loss behind the Diebold-Mariano tests.
-- **MAE** (mean absolute error, MW) is the typical miss in megawatts.
-
-Model selection and validation (LightGBM tuning, the combination's members)
-use MAE or RMSE. MAPE is used only to report the final results.
-
-Every model produces forecasts from 16 Jul 2018 onward. The results below are
-for the **test year (Oct 2025 – Sep 2026)**, which has 8,760 forecasts at
-each horizon. The test year comes after the Apr–Sep 2025 validation window
-that was used to pick the combination's members.
+The main report uses **scenario A** from `combination_scenarios_and_gr.R`: ten
+individual candidates, including per-horizon direct SARIMA with a 24-hour season.
+The equal-weight combination is selected on validation RMSE and contains AR,
+LASSO and post-LASSO at every horizon. Scores below use the final test year
+(October 2025-September 2026), with 8,760 target hours per horizon.
 
 **MAPE (%)**
 
@@ -165,39 +153,58 @@ that was used to pick the combination's members.
 | Seasonal naive (24h) | 2.82 | 2.82 | 2.82 | 2.82 |
 | *EMA (reference)* | *1.63* | *1.63* | *1.63* | *1.63* |
 
-At h = 1 the AR's MAPE (0.327) is just below the combination's (0.330).
+EMA is an operational reference, not a horizon-matched competitor, and is
+excluded from rankings and the report-aligned DM families. The separate
+`evaluate.R` workflow uses the original seasonal archive (or newly generated
+`sarima.csv.gz` / `holt_winters.csv.gz`). Its original recursive SARIMA is a
+different specification from the direct SARIMA in scenario A; do not mix their
+rows when reproducing the report.
 
-Each model is tested against the AR(p) benchmark using squared-error loss and
-a Newey-West variance, so the DM tests go with the RMSE table. A negative DM
-statistic means the model beats the AR.
+**RMSE / MAE (MW)**
 
-**RMSE (MW), with the DM statistic in brackets**
+| Model | 1 h | 6 h | 12 h | 24 h |
+|---|---:|---:|---:|---:|
+| Combination | 33.7 / 24.1 | 89.9 / 67.6 | 109.0 / 83.8 | 118.8 / 92.1 |
+| Post-LASSO | 34.8 / 25.6 | 94.8 / 72.5 | 111.9 / 86.9 | 117.7 / 91.2 |
+| LASSO | 35.0 / 25.6 | 95.0 / 72.6 | 112.1 / 87.0 | 117.8 / 91.5 |
+| AR (BIC) | 34.5 / 23.9 | 92.3 / 68.3 | 114.9 / 87.6 | 127.7 / 98.3 |
+| LightGBM | 40.8 / 29.4 | 109.7 / 79.3 | 129.0 / 94.9 | 144.1 / 109.3 |
+| Random forest | 48.8 / 35.1 | 115.3 / 83.4 | 131.1 / 96.8 | 136.8 / 103.9 |
+| Bagging | 47.8 / 34.3 | 128.5 / 90.2 | 145.7 / 103.7 | 148.6 / 110.0 |
+| SARIMA direct (24 h) | 51.6 / 36.2 | 216.6 / 153.6 | 281.2 / 197.7 | 273.2 / 207.3 |
+| Holt-Winters (24 h) | 66.1 / 49.7 | 246.7 / 194.4 | 281.7 / 217.5 | 306.8 / 214.4 |
+| Weekly seasonal naive | 234.0 / 160.5 | 234.0 / 160.5 | 234.0 / 160.5 | 234.0 / 160.5 |
+| Daily seasonal naive | 313.8 / 204.4 | 313.8 / 204.4 | 313.8 / 204.4 | 313.8 / 204.4 |
+| EMA (reference only) | 128.6 / 115.4 | 128.6 / 115.4 | 128.6 / 115.4 | 128.6 / 115.4 |
 
-| Model | h = 1 | h = 6 | h = 12 | h = 24 |
-|---|---|---|---|---|
-| Combination | **33.7** (−4.23\*\*\*) | **89.9** (−2.48\*\*) | **109.0** (−4.63\*\*\*) | 118.8 (−5.44\*\*\*) |
-| post-LASSO | 34.8 (1.39) | 94.8 (1.83) | 111.9 (−1.71) | **117.7** (−4.22\*\*\*) |
-| LASSO | 35.0 (1.99) | 95.0 (2.00) | 112.1 (−1.63) | 117.8 (−4.39\*\*\*) |
-| AR(p) by BIC | 34.5 | 92.3 | 114.9 | 127.7 |
-| LightGBM | 40.8 (5.61\*\*\*) | 109.7 (4.25\*\*\*) | 129.0 (3.37\*\*\*) | 144.1 (4.06\*\*\*) |
-| Random forest | 48.8 (9.02\*\*\*) | 115.3 (5.53\*\*\*) | 131.1 (3.82\*\*\*) | 136.8 (2.51\*) |
-| Bagging | 47.8 (11.06\*\*\*) | 128.5 (5.60\*\*\*) | 145.7 (4.75\*\*\*) | 148.6 (4.21\*\*\*) |
-| *EMA (reference)* | *128.6* | *128.6* | *128.6* | *128.6* |
+**Holm-adjusted DM p-values against AR, squared-error loss, 20 lags**
 
-Stars use **Holm-adjusted p-values**, as in the report: squared-error loss,
-Bartlett Newey-West variance with 20 lags, Student-t p-values, and Holm
-applied within two families: the 36 individual comparisons (9 models × 4
-horizons) and the 4 combination comparisons. EMA is not tested. With 168 lags
-two conclusions change: the combination at h = 6 (p = 0.056) and LightGBM at
-h = 12 (p = 0.079) are no longer significant. These tests are scenario A in
-`dm_tests_holm_A_B.zip`. `forecast_tests.R` (`dm_tests_holm.csv`) is an
-alternative single 44-test family with 21–23 lags and is not used in the report.
+| Model | 1 h | 6 h | 12 h | 24 h |
+|---|---:|---:|---:|---:|
+| Combination | <0.001 | 0.013 | <0.001 | <0.001 |
+| Post-LASSO | 0.274 | 0.274 | 0.274 | <0.001 |
+| LASSO | 0.274 | 0.274 | 0.274 | <0.001 |
+| LightGBM | <0.001 | <0.001 | 0.006 | <0.001 |
+| Random forest | <0.001 | <0.001 | 0.001 | 0.084 |
+| Bagging | <0.001 | <0.001 | <0.001 | <0.001 |
+| SARIMA direct (24 h) | <0.001 | <0.001 | <0.001 | <0.001 |
+| Holt-Winters (24 h) | <0.001 | <0.001 | <0.001 | <0.001 |
+| Weekly seasonal naive | <0.001 | <0.001 | <0.001 | <0.001 |
+| Daily seasonal naive | <0.001 | <0.001 | <0.001 | <0.001 |
 
-\* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01 (Holm-adjusted). SARIMA,
-Holt-Winters and the seasonal-naive models lose to the AR at every horizon
-with Holm p < 0.001.
+The individual-model family contains 36 tests (9 challengers x 4 horizons);
+the combination family contains 4 tests and is adjusted separately. EMA is
+excluded. Squared-error loss underlies RMSE; the DM statistic is based on hourly
+loss differences, not on the aggregate RMSE itself. Negative statistics favour
+the challenger. Newey-West uses Bartlett weights, no prewhitening and two-sided
+Student-t p-values. The same script produces 168-lag sensitivity results.
 
-**MAE (MW)**
+At 20 lags, the combination significantly improves on AR at all horizons.
+LASSO and post-LASSO have no detectable difference at 1, 6 or 12 hours and
+improve at 24 hours. RF is worse at 1, 6 and 12 hours, with no detectable
+difference at 24 hours. Other individual candidates are worse at every horizon.
+At 168 lags, the combination at 6 hours and LightGBM at 12 hours are no longer
+significant at 5%. Non-rejection is not proof of equal accuracy.
 
 | Model | h = 1 | h = 6 | h = 12 | h = 24 |
 |---|---|---|---|---|
@@ -360,8 +367,14 @@ day type, so a public holiday takes the Sunday profile, as in `lasso.R`.
 
 Frequencies and average standardised coefficients are in
 [lasso_selection_frequency.csv](output/tables/lasso_selection_frequency.csv).
-[appendix_feature_list.csv](output/tables/appendix_feature_list.csv) describes
-every predictor.
+[appendix_feature_list.csv](output/tables/appendix_feature_list.csv) is the
+all-model feature dictionary. It records group, variable, description, equation,
+model usage, horizons, information timing, entry kind, notes and source scripts.
+It includes target-calendar and target-aligned demand features for the trees,
+AR lag/calendar blocks, unpenalised LASSO cells, and holiday-extension terms.
+Design blocks and combination inputs are labelled separately: the 76 dictionary
+rows are not 76 scalar predictors. The tree entries match the implemented
+57/56-predictor sets exactly.
 
 ## 6. How to run
 
@@ -410,14 +423,13 @@ Rscript R/models/holt_winters.R    # ~1.5 h
 # evaluation (no model fitting, runs in seconds)
 Rscript R/evaluation/evaluate.R
 Rscript R/evaluation/dm_and_combination.R
-Rscript R/evaluation/forecast_tests.R                 # separate Holm-adjusted original-model tests
 Rscript R/evaluation/combination_scenarios_and_gr.R   # reads both SARIMA/HW zips directly
 Rscript R/lasso_selection.R                           # ~5 min, refits LASSO on a subsample
 Rscript R/report_figures.R                            # writes output/figures/fig1_*.png, fig2_*.png
 ```
 
 The forecasts used for the results above are already in `output/forecasts/`,
-so you can skip the model scripts and go straight to evaluation. The three main
+so you can skip the model scripts and go straight to evaluation. The two simpler
 evaluation scripts accept freshly generated `sarima.csv.gz` and
 `holt_winters.csv.gz` through `read_seasonal_forecasts()` in `R/utils.R`.
 When neither is present, they read the supplied combined seasonal CSV or ZIP
@@ -425,10 +437,27 @@ without manual extraction. Generating only one seasonal model is an error,
 preventing silent mixing of fresh and archived predictions. Period labels use
 TARGET time: validation 1 Apr-30 Sep 2025; test 1 Oct 2025-30 Sep 2026.
 
-For the optional scenario/GR analysis, also supply `sarima_hw_forecasts.zip`.
-Its assembly from the individual variant model outputs is not yet automated;
-see [the reproducibility audit](docs/REPRODUCIBILITY_AUDIT.md) before attempting
-a completely fresh run of that extension.
+### Seasonal-extension input handoff
+
+The report-aligned scenario/GR analysis reads `sarima_hw_forecasts.zip`, which
+is already supplied under `output/forecasts/`. Inside it are two joined tables:
+`forecasts_without_holiday.csv` and `forecasts_with_holiday.csv`.
+
+The model scripts instead save separate files, such as
+`sarima24_direct.csv.gz`, `sarima168_direct.csv.gz`,
+`sarima24_direct_hol.csv.gz`, `sarima168_direct_hol.csv.gz`,
+`holt_winters.csv.gz`, `holt_winters168.csv.gz`,
+`holt_winters_hol.csv.gz` and `holt_winters168_hol.csv.gz`.
+The missing automated step is to join these on (origin, horizon), check actual
+values/coverage, rename columns to the scenario loader's schema, and package
+the two combined tables into the ZIP. No model estimation occurs in this step.
+
+- **Reproduce saved report results:** keep the supplied archives and run
+  `Rscript R/evaluation/combination_scenarios_and_gr.R`.
+- **Rebuild the extension from raw data:** estimate the required seasonal
+  variants, then assemble the archive before running the scenario script.
+  Archive assembly is not yet implemented as a repository script, so this
+  second route is not currently a single automatic pipeline.
 
 All commands are project-root-relative. Raw files must be supplied in the exact
 layout documented in `docs/DATA.md`; the code does not download them. In
@@ -443,9 +472,17 @@ On Windows, R is not on the PATH by default:
 $env:Path += ";$env:LOCALAPPDATA\Programs\R\R-4.4.2\bin\x64"
 ```
 
-## 7. Reproducibility audit
+## 7. Reproducibility status
 
-See [docs/REPRODUCIBILITY_AUDIT.md](docs/REPRODUCIBILITY_AUDIT.md) for the
-17 November 2026 checks, fixes, installed/missing dependencies and remaining
-raw-to-results gaps. The data rebuild was verified using cached hourly NEA
-aggregates; a fresh re-estimation of every model was not performed.
+The dataset and feature stages were checked in an isolated directory using
+supplied EMA/ERA5/holiday inputs and cached hourly NEA aggregates; the resulting
+85,440 x 65 feature matrix matched the saved matrix. Evaluation was checked
+against supplied forecasts without re-estimating models. A complete fresh run
+of raw minute-level NEA aggregation and every model was not performed.
+
+Remaining tasks are to verify the modelling environment from a clean setup,
+record the exact package versions (no `renv.lock` is currently supplied), include
+raw data in the submission archive despite its Git ignore rules, and automate
+the seasonal-extension handoff if claiming a fully automatic raw-to-results run.
+The original weekly-EMA-to-yearly-CSV conversion is outside the R pipeline; the
+supplied yearly CSVs are the declared starting inputs.
