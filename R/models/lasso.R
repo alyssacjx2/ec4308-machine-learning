@@ -22,6 +22,8 @@ suppressMessages({
 # ---- 0. settings -------------------------------------------------------------
 # THESE MUST MATCH benchmarks.R. If any of H, WINDOW, REFIT or OOS_START differs,
 # the forecasts are for different hours and cannot be compared or DM-tested.
+source("R/utils.R")
+
 IN        <- "data/processed/features.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)
 WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training pairs
@@ -47,7 +49,7 @@ OUT <- if (PARTIAL_OUT) "output/forecasts/lasso.csv.gz" else
 MAX_REFITS <- Inf
 
 # ---- load --------------------------------------------------------------------
-f <- fread(IN, colClasses = c(datetime = "character"))
+f <- read_gz(IN, colClasses = c(datetime = "character"))
 setorder(f, datetime)
 y <- f$y
 N <- length(y)

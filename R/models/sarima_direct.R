@@ -32,9 +32,9 @@
 #        output/tables/sarima{S}_direct_coef_by_refit.csv
 #        output/tables/sarima{S}_direct_orders.rds
 #
-#   Rscript R/sarima_direct.R --period=168             full run
-#   Rscript R/sarima_direct.R --period=168 --dry-run   3 refits only, writes *_dryrun files
-#   Rscript R/sarima_direct.R --period=24              same model with a daily season
+#   Rscript R/models/sarima_direct.R --period=168             full run
+#   Rscript R/models/sarima_direct.R --period=168 --dry-run   3 refits only, writes *_dryrun files
+#   Rscript R/models/sarima_direct.R --period=24              same model with a daily season
 #
 # Output shape matches lasso.R / benchmarks.csv.gz exactly: one row per (forecast origin,
 # h), `datetime` is the ORIGIN and `actual` is y_{t+h}.
@@ -51,6 +51,8 @@ get_arg <- function(name, default) {
   a <- grep(paste0("^--", name, "="), args, value = TRUE)
   if (length(a)) sub(paste0("^--", name, "="), "", a[1]) else default
 }
+source("R/utils.R")
+
 IN        <- "data/processed/features.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)
 WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training data
@@ -58,7 +60,7 @@ REFIT     <- 168L                       # refit every week
 OOS_START <- "2018-07-16 00:00:00"      # first forecast origin
 S         <- as.integer(get_arg("period", 168))  # seasonal period (hours)
 BURN      <- 2L * 168L                  # first 2 weeks of the window are not scored (error start-up)
-N_CORES   <- as.integer(Sys.getenv("N_CORES", max(1L, parallel::detectCores() - 1L)))
+N_CORES   <- forecast_cores()
 
 MAX_REFITS <- Inf
 DRY <- "--dry-run" %in% args
@@ -77,7 +79,7 @@ par_map <- function(X, FUN) {
 }
 
 # ---- load --------------------------------------------------------------------
-f <- fread(IN, select = c("datetime", "y"), colClasses = c(datetime = "character"))
+f <- read_gz(IN, select = c("datetime", "y"), colClasses = c(datetime = "character"))
 setorder(f, datetime)
 y <- f$y
 N <- length(y)

@@ -4,6 +4,8 @@ library(data.table)
 library(lightgbm)
 
 # settings set to be the same as the benchmark AR model, to ensure comparability
+source("R/utils.R")
+
 IN <- "data/processed/features.csv.gz"
 OUT <- "output/forecasts/lgbm.csv.gz"
 OUT_TUNE <- "output/forecasts/lgbm_tuning.csv.gz"
@@ -35,7 +37,7 @@ if (DRY_RUN) {  # separate files, so dry run will not override results
 }
 
 # load
-f <- fread(IN, colClasses = c(datetime = "character")) #character means no timezone shift
+f <- read_gz(IN, colClasses = c(datetime = "character")) #character means no timezone shift
 setorder(f, datetime)
 y <- f$y #target variable
 N <- length(y)
@@ -152,14 +154,20 @@ tasks <- rbindlist(lapply(H, function(h) {
 }))[, .(ks = list(k)), by = .(h, chunk)]
 cat(nrow(tasks), "tasks on", CORES, "processes\n")
 
-res <- parallel::mclapply(seq_len(nrow(tasks)), function(i) {
+# Forking is unavailable on Windows. Scheduling changes do not alter seeds
+# or the horizon-specific training/validation data.
+run_tasks <- function(X, FUN) {
+  if (.Platform$OS.type == "windows" || CORES == 1L) lapply(X, FUN) else
+    parallel::mclapply(X, FUN, mc.cores = CORES, mc.preschedule = FALSE)
+}
+res <- run_tasks(seq_len(nrow(tasks)), function(i) {
   setDTthreads(1L)
   t0 <- Sys.time()
   r  <- lgbm.rolling.window(tasks$h[i], tasks$ks[[i]])
   cat(sprintf("  h=%2d  refits %3d-%3d done  %5.1f min\n", tasks$h[i], min(tasks$ks[[i]]),
               max(tasks$ks[[i]]), as.numeric(difftime(Sys.time(), t0, units = "mins"))))
   r
-}, mc.cores = CORES, mc.preschedule = FALSE)
+})
 
 failed <- which(vapply(res, function(r) inherits(r, "try-error") || is.null(r), logical(1)))
 if (length(failed)) stop("tasks failed: ", paste(failed, collapse = ", "), "\n", res[[failed[1]]])

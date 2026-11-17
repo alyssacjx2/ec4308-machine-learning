@@ -17,8 +17,8 @@
 #        output/tables/sarima_orders.txt          selected orders + first-window coefficients
 #        output/tables/sarima_coef_by_refit.csv   coefficients at every weekly refit
 #
-#   Rscript R/sarima.R            full run (about 1 hour on 2 cores)
-#   Rscript R/sarima.R --dry-run  3 refits only, writes *_dryrun files (to check the code)
+#   Rscript R/models/sarima.R            full run (about 1 hour on 2 cores)
+#   Rscript R/models/sarima.R --dry-run  3 refits only, writes *_dryrun files (to check the code)
 #
 # Output shape matches lasso.R / benchmarks.csv.gz exactly: one row per (forecast origin,
 # h), `datetime` is the ORIGIN and `actual` is y_{t+h}, so evaluate.R can merge the model
@@ -32,6 +32,8 @@ suppressMessages({
 # ---- 0. settings -------------------------------------------------------------
 # THESE MUST MATCH lasso.R / benchmarks.R. If any of H, WINDOW, REFIT or OOS_START differs,
 # the forecasts are for different hours and cannot be compared or DM-tested.
+source("R/utils.R")
+
 IN        <- "data/processed/features.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)
 WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training data
@@ -42,7 +44,7 @@ PERIOD    <- 24L                        # seasonal period (hours)
 D_SEAS    <- 1L                         # seasonal differencing
 METHOD    <- "CSS"                      # coefficient estimation at each refit
 STATE_H   <- 8L * 168L                  # hours the frozen model is filtered over at each origin
-N_CORES   <- as.integer(Sys.getenv("N_CORES", max(1L, parallel::detectCores() - 1L)))
+N_CORES   <- forecast_cores()
 
 # Smoke test: number of refits to run. Inf = full run. `--dry-run` sets it to 3.
 MAX_REFITS <- Inf
@@ -61,7 +63,7 @@ par_map <- function(X, FUN) {
 }
 
 # ---- load --------------------------------------------------------------------
-f <- fread(IN, select = c("datetime", "y"), colClasses = c(datetime = "character"))
+f <- read_gz(IN, select = c("datetime", "y"), colClasses = c(datetime = "character"))
 setorder(f, datetime)
 y <- f$y
 N <- length(y)
