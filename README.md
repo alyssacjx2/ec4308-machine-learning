@@ -35,6 +35,7 @@ R/
     run_forests.R            random forest and bagging (ranger)
     lgbm.R                   LightGBM
   lasso_selection.R          which predictors LASSO keeps across refits
+  report_figures.R           report Figures 1-2 (daily mean demand, demand by hour and day type)
   evaluation/
     evaluate.R               merges every model's forecasts and scores them
     dm_and_combination.R     Diebold-Mariano tests, forecast combination
@@ -239,8 +240,9 @@ against the AR (squared error, 20 Newey-West lags):
 | Holt-Winters (168h) + holiday | 0.43 / 1.05 / **1.19** / **1.33** | 43.4 / 100.1 / 111.1 / 123.0 |
 | *AR(p) by BIC, for reference* | *0.33 / 0.94 / 1.22 / 1.37* | *34.5 / 92.3 / 114.9 / 127.7* |
 
-- **The weekly season matters most.** Moving from a 24 h to a 168 h season
-  roughly halves the error of both models at h ≥ 6.
+- **The weekly season matters most.** At h ≥ 6, moving from a 24 h to a
+  168 h season cuts MAPE by about a third for SARIMA and about half for
+  Holt-Winters.
 - **The holiday adjustment helps further**, mostly at h ≥ 6.
 - **Weekly Holt-Winters with holidays** uses demand alone, yet it has a lower
   MAPE and MAE than the AR at h = 12 and 24 (MAE 84.6 vs 87.6 MW and 95.0 vs
@@ -283,9 +285,8 @@ each pool:
 - **GR over the top 3 alone is unstable.** LASSO and post-LASSO are almost
   collinear, so the weights move to extremes (at h = 1: post-LASSO 1.43,
   LASSO −0.58, AR 0.15). It is worse than equal weights at every horizon.
-- The weights barely change from validation to test, but the intercept
-  does not carry over well. The no-intercept versions score better on the
-  test year (MAPE 0.873 and 1.089 at h = 6 and 12 for pool B), but
+- The intercept that validation favours does not carry over well to the
+  test year. The no-intercept versions score better on the test year (MAPE 0.873 and 1.089 at h = 6 and 12 for pool B), but
   validation would not have picked them, so we do not report them as results.
 
 **Effect on the overall evaluation.** The main ranking in Section 5 still
@@ -317,7 +318,8 @@ day type, so a public holiday takes the Sunday profile, as in `lasso.R`.
   h = 24.
 - **Temperature matters more as the horizon grows.** At h = 1 only the
   one-hour lag is always kept. From h = 6 the 24 h and 72 h moving averages
-  are kept in 88–100% of refits and carry the largest weather coefficients.
+  are kept in 88–100% of refits. Together with squared temperature (kept in
+  91–100% at h = 6 and 12), they carry the largest weather coefficients.
 - **Rainfall and wind** (current rainfall, wind speed and direction) are kept
   in 74–100% of refits at every horizon, and `is_holiday` in 74–93%.
 - Between 16 (h = 1) and 22 (h = 12, 24) predictors are kept in at least half
@@ -361,6 +363,7 @@ Rscript R/evaluation/evaluate.R
 Rscript R/evaluation/dm_and_combination.R
 Rscript R/evaluation/combination_scenarios_and_gr.R   # reads both SARIMA/HW zips directly
 Rscript R/lasso_selection.R                           # ~5 min, refits LASSO on a subsample
+Rscript R/report_figures.R                            # writes output/figures/fig1_*.png, fig2_*.png
 ```
 
 The forecasts used for the results above are already in `output/forecasts/`,
