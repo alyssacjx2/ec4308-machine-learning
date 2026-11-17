@@ -27,18 +27,21 @@ R/
     explore_demand.R         standalone EDA (not part of the pipeline)
   models/                    one script per model, all with the same forecast settings
     benchmarks.R             seasonal naive (24h, 168h) + AR(p) by BIC
-    sarima.R, sarima_direct.R
+    sarima_direct.R          per-horizon SARIMA (the version reported in the main results)
+    sarima.R                 original recursive SARIMA, kept for reference only
     sarima_direct_holiday.R  per-horizon SARIMA, 24h or 168h season, holiday adjustment
     holt_winters.R
     holt_winters_holiday.R   Holt-Winters, 24h or 168h season, holiday adjustment
     lasso.R                  LASSO and post-LASSO (hdm::rlasso)
     run_forests.R            random forest and bagging (ranger)
+    forest_features.R        horizon-specific predictor set for the forests (sourced by run_forests.R)
     lgbm.R                   LightGBM
   lasso_selection.R          which predictors LASSO keeps across refits
   report_figures.R           report Figures 1-2 (daily mean demand, demand by hour and day type)
   evaluation/
     evaluate.R               merges every model's forecasts and scores them
     dm_and_combination.R     Diebold-Mariano tests, forecast combination
+    forecast_tests.R         alternative Holm-adjusted DM tests (single 44-test family; not used in the report)
     combination_scenarios_and_gr.R   combination with the extra variants, Granger-Ramanathan weights
     compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
@@ -100,7 +103,7 @@ for different hours and could not be compared or DM-tested.
 
 | Setting | Value |
 |---|---|
-| Horizons | h = 1, 6, 12, 24; regressions/ensembles use separate direct models, while the original SARIMA reads horizons from a recursive forecast path |
+| Horizons | h = 1, 6, 12, 24; every reported model is fitted separately for each horizon (the regressions and ensembles are direct models; SARIMA and Holt-Winters choose their coefficients on the h-step error) |
 | Training window | rolling, 1.5 years = 13,140 (origin, target) pairs |
 | Refit | every 168 hours (weekly) |
 | First forecast origin | 2018-07-16 00:00:00 |
@@ -111,7 +114,7 @@ for different hours and could not be compared or DM-tested.
 |---|---|---|
 | Seasonal naive | `benchmarks.R` | ŷ<sub>t+h</sub> = y<sub>t+h−s</sub>, with s = 24 and s = 168 |
 | AR(p) by BIC | `benchmarks.R` | direct AR with p ∈ {24, 48, …, 168}, plus hour × day-type and Covid dummies (an ARX) |
-| SARIMA | `sarima.R` | ARIMA(p,d,q)(P,1,Q)[24]; orders chosen by AICc on the first window, coefficients re-estimated weekly |
+| SARIMA | `sarima_direct.R` | ARIMA(2,0,1)(2,1,0)[24]; orders chosen once by AICc on the first window, coefficients re-estimated weekly and separately for each h by minimising the squared h-step error |
 | Holt-Winters | `holt_winters.R` | additive, daily season (HW24); α and γ tuned separately for each horizon |
 | LASSO / post-LASSO | `lasso.R` | `hdm::rlasso` with a data-driven penalty; the 167 hour-of-week cells are left unpenalised |
 | Random forest | `run_forests.R` | 500 trees, mtry = ⌊p/3⌋ = 19 (h=1/6/12), 18 (h=24), min node size 5 |
@@ -156,7 +159,7 @@ that was used to pick the combination's members.
 | LightGBM | 0.41 | 1.09 | 1.30 | 1.51 |
 | Random forest | 0.48 | 1.14 | 1.33 | 1.44 |
 | Bagging | 0.47 | 1.24 | 1.42 | 1.52 |
-| SARIMA | 0.50 | 2.26 | 2.99 | 3.14 |
+| SARIMA | 0.50 | 2.14 | 2.73 | 2.87 |
 | Holt-Winters (HW24) | 0.70 | 2.74 | 3.05 | 2.97 |
 | Seasonal naive (168h) | 2.25 | 2.25 | 2.25 | 2.25 |
 | Seasonal naive (24h) | 2.82 | 2.82 | 2.82 | 2.82 |
@@ -172,22 +175,27 @@ statistic means the model beats the AR.
 
 | Model | h = 1 | h = 6 | h = 12 | h = 24 |
 |---|---|---|---|---|
-| Combination | **33.7** (−4.23\*\*\*) | **89.9** (−2.47\*\*) | **109.0** (−4.59\*\*\*) | 118.8 (−5.23\*\*\*) |
-| post-LASSO | 34.8 (1.39) | 94.8 (1.82\*) | 111.9 (−1.69\*) | **117.7** (−4.07\*\*\*) |
-| LASSO | 35.0 (1.99\*\*) | 95.0 (2.00\*\*) | 112.1 (−1.61) | 117.8 (−4.22\*\*\*) |
+| Combination | **33.7** (−4.23\*\*\*) | **89.9** (−2.48\*\*) | **109.0** (−4.63\*\*\*) | 118.8 (−5.44\*\*\*) |
+| post-LASSO | 34.8 (1.39) | 94.8 (1.83) | 111.9 (−1.71) | **117.7** (−4.22\*\*\*) |
+| LASSO | 35.0 (1.99) | 95.0 (2.00) | 112.1 (−1.63) | 117.8 (−4.39\*\*\*) |
 | AR(p) by BIC | 34.5 | 92.3 | 114.9 | 127.7 |
-| LightGBM | 40.8 (5.57\*\*\*) | 109.7 (4.22\*\*\*) | 129.0 (3.34\*\*\*) | 144.1 (3.97\*\*\*) |
-| Random forest | 48.8 (8.93\*\*\*) | 115.3 (5.49\*\*\*) | 131.1 (3.79\*\*\*) | 136.8 (2.44\*\*) |
-| Bagging | 47.8 (10.94\*\*\*) | 128.5 (5.57\*\*\*) | 145.7 (4.72\*\*\*) | 148.6 (4.13\*\*\*) |
-| *EMA (reference)* | *128.6* | *128.6* | *128.6* | *128.6 (0.20)* |
+| LightGBM | 40.8 (5.61\*\*\*) | 109.7 (4.25\*\*\*) | 129.0 (3.37\*\*\*) | 144.1 (4.06\*\*\*) |
+| Random forest | 48.8 (9.02\*\*\*) | 115.3 (5.53\*\*\*) | 131.1 (3.82\*\*\*) | 136.8 (2.51\*) |
+| Bagging | 47.8 (11.06\*\*\*) | 128.5 (5.60\*\*\*) | 145.7 (4.75\*\*\*) | 148.6 (4.21\*\*\*) |
+| *EMA (reference)* | *128.6* | *128.6* | *128.6* | *128.6* |
 
-The significance stars in this table use **raw p-values**, not Holm-adjusted
-p-values. For multiplicity-adjusted original-model inference, run
-`Rscript R/evaluation/forecast_tests.R` and use `dm_tests_holm.csv`. Its 44-test
-correction and 21/21/21/23 lags differ from the optional extensions below.
+Stars use **Holm-adjusted p-values**, as in the report: squared-error loss,
+Bartlett Newey-West variance with 20 lags, Student-t p-values, and Holm
+applied within two families: the 36 individual comparisons (9 models × 4
+horizons) and the 4 combination comparisons. EMA is not tested. With 168 lags
+two conclusions change: the combination at h = 6 (p = 0.056) and LightGBM at
+h = 12 (p = 0.079) are no longer significant. These tests are scenario A in
+`dm_tests_holm_A_B.zip`. `forecast_tests.R` (`dm_tests_holm.csv`) is an
+alternative single 44-test family with 21–23 lags and is not used in the report.
 
-\* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01. SARIMA, Holt-Winters and the
-seasonal-naive models lose to the AR at every horizon with p < 0.001.
+\* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01 (Holm-adjusted). SARIMA,
+Holt-Winters and the seasonal-naive models lose to the AR at every horizon
+with Holm p < 0.001.
 
 **MAE (MW)**
 
@@ -200,7 +208,7 @@ seasonal-naive models lose to the AR at every horizon with p < 0.001.
 | LightGBM | 29.4 | 79.3 | 94.9 | 109.3 |
 | Random forest | 35.1 | 83.4 | 96.8 | 103.9 |
 | Bagging | 34.3 | 90.2 | 103.7 | 110.0 |
-| SARIMA | 36.2 | 162.1 | 215.5 | 227.7 |
+| SARIMA | 36.2 | 153.6 | 197.7 | 207.3 |
 | Holt-Winters (HW24) | 49.7 | 194.4 | 217.5 | 214.4 |
 | Seasonal naive (168h) | 160.5 | 160.5 | 160.5 | 160.5 |
 | Seasonal naive (24h) | 204.4 | 204.4 | 204.4 | 204.4 |
@@ -209,21 +217,30 @@ seasonal-naive models lose to the AR at every horizon with p < 0.001.
 - **The combination** is the equal-weight average of LASSO, post-LASSO and
   the AR. Each member was chosen by validation RMSE (Apr–Sep 2025), so the
   test year played no part in picking them. It is the only model that
-  significantly beats the AR at every horizon on RMSE. On MAPE and MAE it
-  also comes out on top at h = 6 and 12. At h = 1 it is level with the AR,
-  and at h = 24 post-LASSO is narrowly better.
-- **LASSO** significantly beats the AR only at h = 24 (an 8% lower RMSE).
-  At h = 1 and 6 it is slightly but significantly worse than the AR.
+  significantly beats the AR at every horizon on RMSE, although the h = 6
+  result does not survive 168 lags. On MAPE and MAE it also comes out on top
+  at h = 6 and 12. At h = 1 it is level with the AR, and at h = 24
+  post-LASSO is narrowly better.
+- **LASSO and post-LASSO** significantly beat the AR only at h = 24 (about
+  8% lower RMSE). At h = 1, 6 and 12 there is no statistically detectable
+  difference after the Holm correction (adjusted p = 0.27), even though they
+  are slightly worse than the AR at h = 1 and 6.
 - **The tree ensembles** are significantly worse than the AR at every
-  horizon. LightGBM is the best of them on every metric at h = 1, 6 and 12;
-  the random forest is the best of them at h = 24.
+  horizon, except the random forest at h = 24 (Holm p = 0.084). LightGBM is
+  the best of them on every metric at h = 1, 6 and 12; the random forest is
+  the best of them at h = 24.
 - **SARIMA and Holt-Winters** use demand alone and model only the daily
   cycle. By h = 12, both are worse than the weekly seasonal-naive forecast.
 
 The numbers above are in
-[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv).
-The DM tests are in
-[dm_tests_all_models.csv](output/tables/dm_tests_all_models.csv). Scores for
+[test_metrics_all_models.csv](output/tables/test_metrics_all_models.csv),
+except the SARIMA row: that file's `sarima` row is the original recursive
+`sarima.R` (MAPE 2.26 / 2.99 / 3.14 at h = 6 / 12 / 24).
+The per-horizon SARIMA scores (`sarima24`) and the Holm-adjusted DM tests
+are in `test_metrics_A_B.zip` and `dm_tests_holm_A_B.zip` in
+[output/tables/](output/tables/).
+[dm_tests_all_models.csv](output/tables/dm_tests_all_models.csv) holds the
+unadjusted tests, and its SARIMA row is the original recursive `sarima.R`. Scores for
 the full sample and the validation window, without the combination, are in
 [all_models_comparison.csv](output/tables/all_models_comparison.csv).
 
@@ -232,9 +249,9 @@ the full sample and the validation window, without the combination, are in
 `sarima_direct_holiday.R` and `holt_winters_holiday.R` re-run the two
 classical models with a separate fit for each horizon, a choice of daily
 (24 h) or weekly (168 h) season, and (`_hol`) a weekday public-holiday
-adjustment. The SARIMA rows here are the per-horizon fits, so they differ
-from the SARIMA row in the tables above. Test year, Holm-adjusted DM tests
-against the AR (squared error, 20 Newey-West lags):
+adjustment. The SARIMA (24h) row is the same per-horizon fit as in the main
+tables. Test year, Holm-adjusted DM tests against the AR (squared error, 20
+Newey-West lags, 60 individual comparisons in the extension case):
 
 | Model | MAPE h = 1 / 6 / 12 / 24 | RMSE h = 1 / 6 / 12 / 24 |
 |---|---|---|
@@ -257,7 +274,9 @@ against the AR (squared error, 20 Newey-West lags):
   apart from the AR (Holm p = 0.44). Every other variant is significantly
   worse than the AR at every horizon.
 
-Adding these eight variants to the candidate pool ("scenario B") does not
+Adding the six new variants (all rows above except SARIMA (24h), which is
+already a baseline candidate) to the candidate pool ("scenario B", 16
+candidates) does not
 change the equal-weight combination: LASSO, post-LASSO and the AR still have
 the lowest validation RMSE at every horizon. Scores and tests are in
 `test_metrics_A_B.zip`, `dm_tests_holm_A_B.zip` and
@@ -270,31 +289,38 @@ estimated by regressing actual demand on the member forecasts over the
 validation window (Apr–Sep 2025). Three versions are fitted: no intercept
 (`noint`), weights summing to one (`sum1`), and with an intercept (`int`).
 Each is fitted on three pools: the equal-weight combination's 3 members
-(`top3`), all 10 original models (A), and A plus the 8 variants above (B).
-As with the rest of the project, the version is **chosen on validation
-RMSE**, and MAPE is used only to report the test year. Validation picks the
-intercept version for every pool at every horizon, and pool B has the lowest
-validation RMSE at every horizon. The table shows the intercept version for
-each pool:
+(`top3`), all 10 original models (A), and A plus the 6 variants above (B).
+As in the report, the **main version has unrestricted weights and no
+intercept**, and pool A (the 10 baseline candidates) is the main pool. The
+sum-to-one and intercept versions are sensitivity checks; their results are
+in the zip files below. Weights are estimated once on validation and then
+fixed for the test year:
 
 | Combination | MAPE h = 1 / 6 / 12 / 24 | RMSE h = 1 / 6 / 12 / 24 |
 |---|---|---|
-| Equal weights, top 3 (Section 5) | 0.330 / 0.932 / 1.158 / **1.282** | 33.7 / 89.9 / 109.0 / **118.8** |
-| GR, top 3 | 0.342 / 0.971 / 1.253 / 1.299 | 34.2 / 92.4 / 115.6 / 120.4 |
-| GR, pool A | 0.325 / **0.895** / 1.127 / 1.290 | 32.7 / **87.8** / 108.3 / 120.2 |
-| **GR, pool B (validation choice)** | **0.325** / 0.902 / **1.121** / 1.302 | **32.7** / 88.6 / **106.3** / 121.2 |
+| Equal weights, top 3 (Section 5) | 0.330 / 0.932 / 1.158 / 1.282 | 33.7 / 89.9 / 109.0 / 118.8 |
+| GR, top 3 | 0.343 / 0.934 / 1.140 / **1.254** | 34.3 / 89.6 / 107.7 / **117.1** |
+| **GR, pool A (main)** | 0.326 / 0.882 / 1.095 / 1.262 | 32.8 / 86.7 / 106.3 / 118.1 |
+| GR, pool B (extension) | **0.326** / **0.873** / **1.089** / 1.280 | **32.8** / **86.3** / **104.3** / 119.3 |
 
-- **The validation choice (GR, pool B)** has a lower MAPE than equal weights
-  at h = 1, 6 and 12, and a higher MAPE at h = 24. On the RMSE DM test
-  (Holm-adjusted, 20 lags), it significantly beats equal weights only at
-  h = 1 (p < 0.001), and it beats the AR at h = 1 and 12. At h = 6 and 24 it
-  cannot be told apart from either the AR or equal weights.
+- **GR on pool A** lowers RMSE relative to equal weights by 2.7%, 3.5% and
+  2.5% at h = 1, 6 and 12, with no gain at h = 24 (0.6%). On the RMSE DM test
+  (Holm over 9 schemes × 4 horizons, 20 lags) it significantly beats the AR
+  at every horizon, but it significantly beats equal weights only at h = 1
+  (p < 0.001; p = 0.051, 0.795 and 1.000 at h = 6, 12 and 24).
+- **GR leans on the tree models** that the top-three rule excludes. At h = 12
+  the largest pool-A weights are LightGBM (0.33), post-LASSO (0.24), AR (0.24)
+  and random forest (0.23).
 - **GR over the top 3 alone is unstable.** LASSO and post-LASSO are almost
-  collinear, so the weights move to extremes (at h = 1: post-LASSO 1.43,
-  LASSO −0.58, AR 0.15). It is worse than equal weights at every horizon.
-- The intercept that validation favours does not carry over well to the
-  test year. The no-intercept versions score better on the test year (MAPE 0.873 and 1.089 at h = 6 and 12 for pool B), but
-  validation would not have picked them, so we do not report them as results.
+  collinear, so the weights offset each other (at h = 1: post-LASSO 1.40,
+  LASSO −0.54, AR 0.14). It is significantly worse than equal weights at
+  h = 1 and significantly better at h = 12 (p = 0.003).
+- **GR on pool B** beats equal weights at h = 1, 6 and 12 with 20 lags
+  (p < 0.001, 0.012 and 0.026), but only h = 1 stays significant with
+  168 lags (p = 0.070 and 0.077 at h = 6 and 12).
+- These results are **exploratory**. Some weights are negative, up to 16
+  weights are fitted on one six-month window of autocorrelated data, and the
+  schemes were not chosen in advance.
 
 **Effect on the overall evaluation.** The main ranking in Section 5 still
 holds. The combination's members (LASSO, post-LASSO, AR) do not change when
@@ -303,9 +329,9 @@ lowest validation RMSE. The tree ensembles, and every SARIMA/Holt-Winters
 variant except weekly Holt-Winters with holidays, remain significantly worse
 than the AR. The two changes are:
 
-1. Estimating the combination weights (GR, pool B) improves on equal weights
-   at h = 1 to 12, but significantly so only at h = 1. Equal weights remain
-   the better combination at h = 24.
+1. Estimating the combination weights (GR, pool A) improves on equal weights
+   at h = 1 to 12, but significantly so only at h = 1, and adds nothing at
+   h = 24.
 2. A pure time-series model, weekly Holt-Winters with holidays, now matches
    the AR at h = 12 and 24.
 
@@ -377,7 +403,8 @@ Rscript R/models/benchmarks.R      # ~2.5 h
 Rscript R/models/lasso.R           # ~1 h
 Rscript R/models/lgbm.R            # ~45 min on 7 cores
 Rscript R/models/run_forests.R     # ~2 days (random forest + bagging together)
-Rscript R/models/sarima.R          # ~1 h
+Rscript R/models/sarima.R          # ~1 h; recursive SARIMA, read by evaluate.R / dm_and_combination.R
+Rscript R/models/sarima_direct.R --period=24   # per-horizon SARIMA in the main results (default is --period=168)
 Rscript R/models/holt_winters.R    # ~1.5 h
 
 # evaluation (no model fitting, runs in seconds)
