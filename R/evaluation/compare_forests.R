@@ -1,12 +1,21 @@
 # Compare only identical forecast origins/targets, never aggregate unmatched runs.
-# Optional positional arguments: RF CSV, bagging CSV, output comparison CSV.
+# Optional arguments: RF CSV, bagging CSV, output CSV. With none, reads rf_bagging.csv.gz.
 library(data.table)
 args <- commandArgs(trailingOnly = TRUE)
-rf_path <- if (length(args) >= 1L) args[1] else "output/forecasts/random_forest.csv"
-bag_path <- if (length(args) >= 2L) args[2] else "output/forecasts/bagging.csv"
-out <- if (length(args) >= 3L) args[3] else "output/tables/forest_comparison.csv"
-rf <- fread(rf_path)
-bag <- fread(bag_path)
+out <- if (length(args) >= 3L) args[3] else "output/tables/rf_bagging_comparison.csv"
+if (length(args) >= 2L) {          # called by run_forests.R with the two engine files
+  rf <- fread(args[1])
+  bag <- fread(args[2])
+} else {                           # standalone: split the committed paired file
+  source("R/utils.R")
+  paired_in <- read_gz("output/forecasts/rf_bagging.csv.gz",
+    colClasses = c(refit_origin = "character", datetime = "character", target_datetime = "character"))
+  shared <- c("horizon", "refit_origin", "datetime", "target_datetime", "actual_mw", "train_n")
+  rf <- paired_in[, c(shared, "rf_forecast_mw"), with = FALSE]
+  bag <- paired_in[, c(shared, "bagging_forecast_mw"), with = FALSE]
+  setnames(rf, "rf_forecast_mw", "forecast_mw")
+  setnames(bag, "bagging_forecast_mw", "forecast_mw")
+}
 keys <- c("horizon", "datetime", "target_datetime")
 if (anyDuplicated(rf[, ..keys]) || anyDuplicated(bag[, ..keys]))
   stop("Duplicate forecast keys.")
