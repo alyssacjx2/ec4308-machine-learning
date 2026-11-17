@@ -1,13 +1,23 @@
 # combination_scenarios_and_gr.R -------------------------------------------------
-# Two equal-weight combinations (A: original candidates, B: adds the 168 h and holiday
-# SARIMA/Holt-Winters variants), Granger-Ramanathan (GR) weights, and DM tests vs AR with Holm.
-# SARIMA is the per-horizon fit. Members/weights use VALIDATION only; all scores are TEST.
-# DM: squared error, Newey-West Bartlett, 20 lags (168 sensitivity), no prewhitening, Student-t df n-1;
-# Holm within {individual models} and {combination} (A: 36+4, B: 60+4); GR methods: Holm over 9 x 4.
-# Run from the repo root:  Rscript R/evaluation/combination_scenarios_and_gr.R
-# in : output/forecasts/{benchmarks,lasso,lgbm,rf_bagging}.csv.gz, sarima_holt_winters_forecast_results.zip, sarima_hw_forecasts.zip
-# out: output/tables/{combination_members_A_B,validation_rmse_all_candidates,test_metrics_A_B,dm_tests_holm_A_B,
-#      granger_ramanathan_metrics,granger_ramanathan_weights,granger_ramanathan_dm}.csv
+#
+#   Equal-weight combinations (A: baseline candidates; B: adds the 168 h and holiday
+#   SARIMA / Holt-Winters variants), Granger-Ramanathan (GR) weights, and DM tests
+#   against AR with Holm adjustment. Members and weights use the validation period
+#   only; all scores are on the test period.
+#
+#   DM: squared error, Newey-West (20 lags; 168 as sensitivity), Student-t with n-1 df.
+#   Holm families: individual models, combination, and the 9 GR schemes (x 4 horizons).
+#
+#   in : output/forecasts/{benchmarks,lasso,lgbm,rf_bagging}.csv.gz
+#        output/forecasts/{sarima_hw_forecasts,sarima_holt_winters_forecast_results}.zip
+#        (built by R/evaluation/build_sarima_hw_forecasts.R)
+#   out: output/tables/{combination_members_A_B,validation_rmse_all_candidates,test_metrics_A_B,
+#        dm_tests_holm_A_B,granger_ramanathan_metrics,granger_ramanathan_weights,
+#        granger_ramanathan_dm,combination_vs_best_member,combination_members_by_metric,
+#        member_error_correlations}.csv
+#
+#   Rscript R/evaluation/combination_scenarios_and_gr.R   (from the repo root)
+
 suppressPackageStartupMessages(library(data.table))
 R <- "."; FC <- file.path(R,"output/forecasts"); OUT <- file.path(R,"output/tables")
 dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
@@ -31,7 +41,7 @@ d <- Reduce(function(a,b) merge(a,b,by=c("datetime","h")),
        sh[,.(datetime,h,period,hw24)], fo[,.(datetime,h,random_forest,bagging)],
        nh[,.(datetime,h,sarima24,sarima168,hw168)], wh[,.(datetime,h,sarima24_hol,sarima168_hol,hw24_hol,hw168_hol)]))
 cat("rows",nrow(d),"; periods:"); print(d[,.N,by=.(period)])
-# check actuals consistent
+# actuals must agree across files
 a2 <- merge(bm[,.(datetime,h,a=actual)], fo[,.(datetime,h,b=actual)], by=c("datetime","h")); cat("max actual diff rf:",max(abs(a2$a-a2$b)),"\n")
 base <- c("ar_bic","lasso","post_lasso","lgbm","random_forest","bagging","snaive168","snaive24")
 A <- c(base,"sarima24","hw24")
@@ -74,10 +84,8 @@ base <- c("ar_bic","lasso","post_lasso","lgbm","random_forest","bagging","snaive
 A <- c(base,"sarima24","hw24")
 B <- c(A,"sarima24_hol","sarima168","sarima168_hol","hw24_hol","hw168","hw168_hol")
 val <- d[period=="validation"]; te <- d[period=="test"]
-# GR_noint: unrestricted OLS weights, no intercept.
-# GR_int: OLS weights plus an intercept.
-# GR_sum1: subtract the last forecast so the recovered weights sum to one.
-# Singular OLS coefficients are replaced with zero by the existing convention.
+# GR_noint: OLS weights, no intercept. GR_int: with intercept. GR_sum1: weights sum to one.
+# Singular OLS coefficients are set to zero.
 fit_gr <- function(y, X, type){
   if(type=="GR_noint"){ b <- coef(lm(y ~ X - 1)); w <- b; ic <- 0 }
   if(type=="GR_int"){ b <- coef(lm(y ~ X)); ic <- b[1]; w <- b[-1] }
@@ -125,5 +133,38 @@ for(lg in c(20L,168L)){ cat("\nlags",lg,"\n"); y<-out[lags==lg]
  print(dcast(y,method~h,value.var="DM_vs_AR")[,lapply(.SD,function(z) if(is.numeric(z)) round(z,2) else z)])
  print(dcast(y,method~h,value.var="holm_vs_comb")[,lapply(.SD,function(z) if(is.numeric(z)) f(z) else z)])
  print(dcast(y,method~h,value.var="DM_vs_comb")[,lapply(.SD,function(z) if(is.numeric(z)) round(z,2) else z)]) }
-# bias check on h=24 weights negative; metrics MAE vs combo
+# MAE: combination vs GR
 print(rbindlist(lapply(c(1,6,12,24),function(hh){t<-te[h==hh]; data.table(h=hh,comb_mae=mean(abs(t$actual-t$comb_A)),grA_mae=mean(abs(t$actual-t$GR_noint.A)),grTop_mae=mean(abs(t$actual-t$GR_noint.top3)))})))
+
+
+# ---- Combination diagnostics quoted in Sections 2.6 and 4.2 -------------------------------------
+# (1) combination vs its best member by test RMSE (squared-error DM, 20 lags, unadjusted p;
+#     negative = combination better). Descriptive only, not a selection rule.
+# (2) members chosen when the validation ranking uses MAE or MAPE instead of RMSE.
+# (3) correlations between member errors, on validation and test.
+H4 <- c(1, 6, 12, 24)
+val <- d[period=="validation"]; te <- d[period=="test"]
+membersA <- function(hh) strsplit(mem[h==hh & scenario=="A", members], "\\+")[[1]]
+
+vsbest <- rbindlist(lapply(H4, function(hh){
+  t <- te[h==hh]; ms <- membersA(hh)
+  r <- sapply(ms, function(m) sqrt(mean((t$actual - t[[m]])^2)))
+  b <- names(which.min(r)); ec <- t$actual - t$comb_A; eb <- t$actual - t[[b]]
+  res <- dm_test(ec^2, eb^2, 20L); crmse <- sqrt(mean(ec^2))
+  data.table(h=hh, best_member=b, best_member_rmse=min(r), combination_rmse=crmse,
+             change_vs_best_pct=100*(crmse/min(r)-1), DM=res["stat"], p_unadjusted=res["p"],
+             avg_member_rmse=mean(r), change_vs_avg_member_pct=100*(crmse/mean(r)-1)) }))
+fwrite(vsbest, file.path(OUT,"combination_vs_best_member.csv")); print(vsbest)
+
+score <- list(rmse=function(e,a) sqrt(mean(e^2)), mae=function(e,a) mean(abs(e)), mape=function(e,a) 100*mean(abs(e)/a))
+bymetric <- rbindlist(lapply(H4, function(hh) rbindlist(lapply(names(score), function(s){
+  v <- val[h==hh]; r <- sapply(A, function(m) score[[s]](v$actual - v[[m]], v$actual))
+  top <- names(sort(r))[1:3]
+  data.table(h=hh, ranking_metric=s, members=paste(sort(top), collapse="+"), same_as_rmse=setequal(top, membersA(hh))) }))))
+fwrite(bymetric, file.path(OUT,"combination_members_by_metric.csv")); print(bymetric)
+
+cors <- rbindlist(lapply(c("validation","test"), function(p) rbindlist(lapply(H4, function(hh){
+  x <- d[period==p & h==hh]; e <- function(m) x$actual - x[[m]]
+  data.table(period=p, h=hh, ar_lasso=cor(e("ar_bic"), e("lasso")), ar_post_lasso=cor(e("ar_bic"), e("post_lasso")),
+             lasso_post_lasso=cor(e("lasso"), e("post_lasso"))) }))))
+fwrite(cors, file.path(OUT,"member_error_correlations.csv")); print(cors)

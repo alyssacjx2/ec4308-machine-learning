@@ -1,18 +1,12 @@
 # dm_and_combination.R ---------------------------------------------------------
 #
-#   Adds what evaluate.R does not: (1) a validation-selected equal-weight combination,
-#   (2) Diebold-Mariano tests, both on the TEST period, for every model in
-#   output/forecasts. No model fitting.
+#   Equal-weight combination of the 3 models with the lowest validation RMSE per
+#   horizon, and Diebold-Mariano tests of every model against the AR (ar_bic) on the
+#   test period (squared and absolute error; Newey-West variance). No model fitting.
+#   Superseded by combination_scenarios_and_gr.R, which the report uses.
 #
-#   Combination: for each horizon the 3 non-reference models with the lowest VALIDATION
-#   RMSE (Apr-Sep 2025) are averaged with equal weights. The test period plays no part in
-#   choosing the members.
-#   DM tests: squared-error loss, Newey-West long-run variance, each model against the pre-specified
-#   benchmark, the AR(p) with calendar dummies (ar_bic). Negative statistic = row model better.
-#
-#   in : output/forecasts/{benchmarks,lasso,lgbm}.csv.gz, sarima_holt_winters_forecast_results.csv(.zip),
-#        rf_bagging.csv.gz
-#   out: output/tables/test_metrics_all_models.csv, output/tables/dm_tests_all_models.csv
+#   in : output/forecasts/{benchmarks,lasso,lgbm,rf_bagging}.csv.gz, sarima_holt_winters_forecast_results.zip
+#   out: output/tables/{test_metrics_all_models,dm_tests_all_models,combination_members}.csv
 #
 #   Rscript R/evaluation/dm_and_combination.R
 
@@ -37,7 +31,7 @@ d <- Reduce(function(a, b) merge(a, b, by = c("datetime", "h")),
                  fo[, .(datetime, h, random_forest, bagging)]))
 models <- c("ar_bic", "lasso", "post_lasso", "lgbm", "random_forest", "bagging", "sarima", "hw24", "snaive168", "snaive24")
 
-# combination members chosen on validation only
+# members chosen on validation only
 val <- d[period == "validation"]
 mem <- rbindlist(lapply(sort(unique(d$h)), function(hh) {
   r <- sapply(models, function(m) sqrt(mean((val[h == hh]$actual - val[h == hh][[m]])^2)))
@@ -64,7 +58,7 @@ met <- rbindlist(lapply(sort(unique(te$h)), function(hh) rbindlist(lapply(all_m,
 }))))
 fwrite(met, file.path(TAB, "test_metrics_all_models.csv"))
 
-bench <- data.table(h = sort(unique(val$h)), m = "ar_bic")   # pre-specified benchmark: AR(p) with calendar dummies
+bench <- data.table(h = sort(unique(val$h)), m = "ar_bic")   # benchmark: AR
 print(bench)
 dm <- rbindlist(lapply(sort(unique(te$h)), function(hh) {
   x <- te[h == hh]; ref <- bench[h == hh, m]; eref <- x$actual - x[[ref]]
