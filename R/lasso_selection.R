@@ -1,27 +1,16 @@
 # lasso_selection.R ------------------------------------------------------------
-# Which predictors does LASSO actually keep?
+#
+#   Which predictors does LASSO keep? lasso.R saves only the number selected, and the
+#   selection cannot be recovered from its forecasts, so this refits and records it.
+#   rlasso is deterministic, so a subsample of refit origins (STRIDE) reproduces the
+#   same selections as the full run.
 #
 #   in : data/processed/features.csv.gz
-#   out: output/tables/lasso_selection.csv.gz        (one row per refit x variable)
-#        output/tables/lasso_selection_frequency.csv (summary, one row per variable x h)
+#   out: output/tables/lasso_selection.csv.gz         (one row per refit x variable)
+#        output/tables/lasso_selection_frequency.csv  (one row per variable x h)
 #
-# WHY THIS EXISTS SEPARATELY
-#
-# lasso.R saves `n_sel` - how many variables survived each refit - but never
-# which ones. That cannot be recovered from the saved forecasts: each refit
-# serves exactly 168 consecutive origins and the unpenalised block has exactly
-# 168 hour-of-week cells, so over one week each cell occurs once and the system
-# is perfectly saturated. Any X*beta can be absorbed into the cell effects, so
-# beta is not identified from the predictions alone.
-#
-# Refitting is the only route. rlasso is deterministic - the penalty is computed
-# analytically, not cross-validated - so this reproduces the SAME selections the
-# full run made, exactly rather than approximately. We therefore only need a
-# subsample of refit origins to estimate selection frequency: STRIDE = 10 gives
-# ~43 refits per horizon in about five minutes, against 429 and ~50 minutes.
-#
-# Settings below are copied from lasso.R and must stay in step with it, or this
-# describes a different model from the one that produced the forecasts.
+#   Rscript R/lasso_selection.R
+#   Settings below must match lasso.R.
 
 suppressMessages({
   library(data.table)
@@ -40,7 +29,7 @@ OOS_START   <- "2018-07-16 00:00:00"
 DUMS        <- c("cb_strict", "cb_p1", "cb_p2", "cb_p3", "ha_2021")
 PARTIAL_OUT <- TRUE
 
-STRIDE <- 10L   # fit every STRIDE-th refit origin. 1 = every refit (~50 min).
+STRIDE <- 10L   # fit every STRIDE-th refit origin (1 = all, ~50 min)
 
 f <- fread(IN, colClasses = c(datetime = "character"))
 setorder(f, datetime)
@@ -58,9 +47,7 @@ origin_time <- setdiff(
     grep("^(y_h|nem_h)", names(f), value = TRUE)))
 
 X_org   <- cbind(y_t = y, as.matrix(f[, ..origin_time]))
-# Cells are built from DAY TYPE, not the raw weekday: a public holiday takes the
-# Sunday profile. Must stay in step with lasso.R, or this describes a different
-# model from the one that produced the forecasts.
+# Cells use the day type: a public holiday takes the Sunday profile (as in lasso.R).
 dtype   <- fifelse(f$is_holiday == 1L, 0L, f$dow)   # 0 = Sunday
 hd      <- f$hr * 7L + dtype
 tt_keep <- setdiff(target_time, c("hr", "dow"))
@@ -76,8 +63,7 @@ cell_means <- function(M, g, levels) {
 }
 
 # ---- one window: fit and return the selected set ----------------------------
-# Identical to run_lasso() in lasso.R up to the rlasso call; from there we keep
-# the coefficient names instead of the predictions.
+# Same as run_lasso() in lasso.R up to the rlasso call; then keep the coefficient names.
 select_once <- function(T0, h) {
   tr   <- (T0 - h - WINDOW + 1L):(T0 - h)
   y_tr <- y[tr + h]
@@ -103,9 +89,7 @@ select_once <- function(T0, h) {
   sel <- which(abs(b) > 0)
   if (!length(sel)) return(NULL)
 
-  # Raw coefficients are not comparable across predictors on different scales,
-  # so also report beta * sd(x) within this window: the change in demand, in MW,
-  # associated with a one-standard-deviation move in that predictor.
+  # coef_std = beta * sd(x): MW change per one-sd move, comparable across predictors.
   sds <- apply(X_tr[, sel, drop = FALSE], 2L, sd)
   data.table(variable = names(b)[sel],
              coef     = as.numeric(b[sel]),
