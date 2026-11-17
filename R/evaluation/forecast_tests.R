@@ -19,12 +19,7 @@ RunForecastTests <- function() {
   bm <- read_gz(file.path(FC, "benchmarks.csv.gz"), colClasses = cc)
   la <- read_gz(file.path(FC, "lasso.csv.gz"), colClasses = cc)
   lg <- read_gz(file.path(FC, "lgbm.csv.gz"), colClasses = cc)
-  tmp <- tempfile(); dir.create(tmp)
-  on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
-  sz <- file.path(FC, "sarima_holt_winters_forecast_results.csv")
-  if (!file.exists(sz)) unzip(file.path(FC, "sarima_holt_winters_forecast_results.zip"), exdir = tmp)
-  sh <- fread(if (file.exists(sz)) sz else file.path(tmp, "sarima_holt_winters_forecast_results.csv"),
-              colClasses = c(origin = "character", target_datetime = "character"))
+  sh <- read_seasonal_forecasts(FC)
   setnames(sh, "origin", "datetime")
   fo <- read_gz(file.path(FC, "rf_bagging.csv.gz"), colClasses = c(datetime = "character", target_datetime = "character"))
   setnames(fo, c("horizon", "actual_mw", "rf_forecast_mw", "bagging_forecast_mw"), c("h", "actual", "random_forest", "bagging"))

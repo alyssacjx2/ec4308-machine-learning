@@ -10,6 +10,7 @@
 #      granger_ramanathan_metrics,granger_ramanathan_weights,granger_ramanathan_dm}.csv
 suppressPackageStartupMessages(library(data.table))
 R <- "."; FC <- file.path(R,"output/forecasts"); OUT <- file.path(R,"output/tables")
+dir.create(OUT, recursive=TRUE, showWarnings=FALSE)
 W <- tempfile(); dir.create(W)
 unzip(file.path(FC,"sarima_hw_forecasts.zip"), exdir=W); unzip(file.path(FC,"sarima_holt_winters_forecast_results.zip"), exdir=W)
 source(file.path(R,"R/utils.R"))
@@ -73,6 +74,10 @@ base <- c("ar_bic","lasso","post_lasso","lgbm","random_forest","bagging","snaive
 A <- c(base,"sarima24","hw24")
 B <- c(A,"sarima24_hol","sarima168","sarima168_hol","hw24_hol","hw168","hw168_hol")
 val <- d[period=="validation"]; te <- d[period=="test"]
+# GR_noint: unrestricted OLS weights, no intercept.
+# GR_int: OLS weights plus an intercept.
+# GR_sum1: subtract the last forecast so the recovered weights sum to one.
+# Singular OLS coefficients are replaced with zero by the existing convention.
 fit_gr <- function(y, X, type){
   if(type=="GR_noint"){ b <- coef(lm(y ~ X - 1)); w <- b; ic <- 0 }
   if(type=="GR_int"){ b <- coef(lm(y ~ X)); ic <- b[1]; w <- b[-1] }

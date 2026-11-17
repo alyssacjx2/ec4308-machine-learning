@@ -10,8 +10,8 @@
 suppressMessages(library(data.table))
 
 # ---- 0. settings -------------------------------------------------------------
-# The teammates' ML scripts must use the same H, WINDOW, REFIT and
-# OOS_START, otherwise the forecasts are for different hours and cannot be compared.
+source("R/utils.R")
+
 IN        <- "data/processed/features.csv.gz"
 OUT       <- "output/forecasts/benchmarks.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)        # forecast horizons
@@ -26,7 +26,7 @@ OOS_START <- "2018-07-16 00:00:00"      # first forecast origin: the first Monda
 DUMS      <- c("cb_strict", "cb_p1", "cb_p2", "cb_p3", "ha_2021")
 
 # ---- load --------------------------------------------------------------------
-f <- fread(IN, colClasses = c(datetime = "character")) # read as character to avoid timezone issues
+f <- read_gz(IN, colClasses = c(datetime = "character")) # read as character to avoid timezone issues
 setorder(f, datetime) # sort by datetime
 y   <- f$y # target variable, the hourly load
 N   <- length(y) # number of hours in the dataset

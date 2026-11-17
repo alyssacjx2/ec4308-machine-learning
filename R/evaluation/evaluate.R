@@ -16,9 +16,7 @@ EvaluateForecasts <- function() {
   # Importance and tuning CSVs are diagnostics, not additional forecasts.
   lightgbm <- read_gz(file.path(input, "lgbm.csv.gz"),
                       colClasses = c(datetime = "character"))
-  seasonal <- fread(file.path(input, "sarima_holt_winters_forecast_results.csv"),
-                    colClasses = c(origin = "character",
-                                   target_datetime = "character"))
+  seasonal <- read_seasonal_forecasts(input)
   forest <- read_gz(file.path(input, "rf_bagging.csv.gz"),
                    colClasses = c(datetime = "character",
                                   target_datetime = "character"))

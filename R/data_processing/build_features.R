@@ -19,7 +19,7 @@
 #
 #   * The 168 hour x day-of-week interaction dummies. Materialising them would
 #     add 168 near-empty columns to every row; `hr` and `dow` are kept as
-#     integers and forecast.R expands them per window with model.matrix(), which
+#     integers and model scripts expand them per window with model.matrix(), which
 #     is cheaper and keeps this file committable.
 #
 #   * nem_forecast_mw as a predictor. It is EMA's own operational forecast and
@@ -65,10 +65,12 @@ d[, mth := as.integer(substr(datetime,  6,  7))]
 # LEAKAGE, stated plainly: the climatology is computed over the whole sample, so
 # a gap in 2018 is filled using a mean that includes 2024. This is a real but
 # contained in-sample leak - it touches only PREDICTORS, never the target
-# (demand_mw has zero missing values), and only the 1.3-2.5% of rows that were
-# missing. It therefore cannot inflate forecast accuracy through the target. To
+# (demand_mw has zero missing values). Nevertheless, future weather information
+# can make forecasting accuracy optimistic through the imputed predictors. To
 # remove it entirely, move this block inside the rolling-window loop in
-# forecast.R and recompute the climatology from each training window alone.
+# each model script and recompute climatology using available history only.
+# Two-sided short-gap interpolation also uses future observations and would
+# need a backward-looking replacement in a strictly real-time exercise.
 
 # Fill only NA runs no longer than `maxlen`, and only where the run has real
 # observations on both sides - an unbounded run at either end has nothing to
@@ -213,7 +215,8 @@ for (v in c(paste0("imp_", names(imp_spec)), "imp_any")) f[, (v) := d[[v]]]
 # ---- 3. targets and benchmark ----------------------------------------------
 # Direct forecasting: features at t predict demand at t+h. nem_h<h> is EMA's own
 # forecast OF THAT SAME TARGET HOUR, which is what the benchmark comparison
-# needs - EMA publishes day-ahead, so it is available at t for every h <= 24.
+# needs. EMA issue times are unavailable: this is an operational reference,
+# not evidence that EMA information was available at any particular origin.
 for (h in H) {
   f[, (sprintf("y_h%d",   h)) := shift(d$demand_mw,      h, type = "lead")]
   f[, (sprintf("nem_h%d", h)) := shift(d$nem_forecast_mw, h, type = "lead")]

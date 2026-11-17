@@ -8,7 +8,7 @@ Singapore's grid operator has to match supply to demand hour by hour, so
 accurate short-term load forecasts lower the cost of keeping reserve generation
 on standby. We ask whether machine-learning models that use weather, calendar
 and Covid-regime information can beat classical time-series forecasts of
-Singapore's hourly system demand. Each model produces direct forecasts at
+Singapore's hourly system demand. Models produce forecasts at
 **h = 1, 6, 12 and 24 hours ahead**, using a rolling 1.5-year training window
 that is refitted every week. Forecasts run from 16 Jul 2018. Every model is scored on the
 same held-out test year (Oct 2025 – Sep 2026). MAPE is the headline forecast
@@ -68,11 +68,13 @@ starts in 2017 because that is when usable NEA rainfall data begins.
 | MOM / time.sg | public holidays |
 
 `build_features.R` writes **`data/processed/features.csv.gz`** (85,440 rows ×
-65 columns, 54 predictors). Every model script reads this one file:
+65 columns, including 54 engineered base features and current demand). The
+actual predictor set is model-specific; the updated forests use 57/56 predictors
+after horizon-specific construction. Every model script reads this one file:
 
 ```r
-library(data.table)
-f <- fread("data/processed/features.csv.gz",
+source("R/utils.R")
+f <- read_gz("data/processed/features.csv.gz",
            colClasses = c(datetime = "character"))  # keep Singapore local time as text
 ```
 
@@ -98,11 +100,11 @@ for different hours and could not be compared or DM-tested.
 
 | Setting | Value |
 |---|---|
-| Horizons | h = 1, 6, 12, 24, direct forecasting (one model per h) |
+| Horizons | h = 1, 6, 12, 24; regressions/ensembles use separate direct models, while the original SARIMA reads horizons from a recursive forecast path |
 | Training window | rolling, 1.5 years = 13,140 (origin, target) pairs |
 | Refit | every 168 hours (weekly) |
 | First forecast origin | 2018-07-16 00:00:00 |
-| No leakage | a refit at T0 uses only pairs whose target is already observed (s + h ≤ T0) |
+| Training-label availability | a refit at T0 uses only observed targets (s + h ≤ T0); weather imputation still has the documented look-ahead limitation |
 | Output | one row per (origin, h): `datetime`, `h`, `actual`, model column(s) |
 
 | Model | Script | Specification |
@@ -112,15 +114,15 @@ for different hours and could not be compared or DM-tested.
 | SARIMA | `sarima.R` | ARIMA(p,d,q)(P,1,Q)[24]; orders chosen by AICc on the first window, coefficients re-estimated weekly |
 | Holt-Winters | `holt_winters.R` | additive, daily season (HW24); α and γ tuned separately for each horizon |
 | LASSO / post-LASSO | `lasso.R` | `hdm::rlasso` with a data-driven penalty; the 167 hour-of-week cells are left unpenalised |
-| Random forest | `run_forests.R` | 500 trees, mtry = ⌊p/3⌋ = 18, min node size 5 |
-| Bagging | `run_forests.R` | the same forest with mtry = p = 54 |
+| Random forest | `run_forests.R` | 500 trees, mtry = ⌊p/3⌋ = 19 (h=1/6/12), 18 (h=24), min node size 5 |
+| Bagging | `run_forests.R` | the same forest with mtry = p = 57 (h=1/6/12), 56 (h=24) |
 | LightGBM | `lgbm.R` | tree count, size and loss tuned on the last 4 weeks of each window, retuned about monthly |
 | Combination | `dm_and_combination.R` | equal-weight average of the 3 models with the lowest validation RMSE (Apr–Sep 2025) |
 
 **EMA's forecast is a reference level, not a horizon-matched benchmark.** EMA
 publishes one near-term forecast per period and does not record how far ahead
-it was made, so it scores the same at every h. Beating it at h = 1 is a fair
-comparison. Losing to it at h = 24 tells us nothing about the model. The
+it was made, so it scores the same at every h. Even at h = 1 its information lead cannot be established, so its errors
+should not be interpreted as a formally matched-horizon comparison. The
 horizon-matched benchmarks are the seasonal-naive models and the AR(p).
 
 ## 5. Results
@@ -178,6 +180,11 @@ statistic means the model beats the AR.
 | Random forest | 48.8 (8.93\*\*\*) | 115.3 (5.49\*\*\*) | 131.1 (3.79\*\*\*) | 136.8 (2.44\*\*) |
 | Bagging | 47.8 (10.94\*\*\*) | 128.5 (5.57\*\*\*) | 145.7 (4.72\*\*\*) | 148.6 (4.13\*\*\*) |
 | *EMA (reference)* | *128.6* | *128.6* | *128.6* | *128.6 (0.20)* |
+
+The significance stars in this table use **raw p-values**, not Holm-adjusted
+p-values. For multiplicity-adjusted original-model inference, run
+`Rscript R/evaluation/forecast_tests.R` and use `dm_tests_holm.csv`. Its 44-test
+correction and 21/21/21/23 lags differ from the optional extensions below.
 
 \* p < 0.10, \*\* p < 0.05, \*\*\* p < 0.01. SARIMA, Holt-Winters and the
 seasonal-naive models lose to the AR at every horizon with p < 0.001.
@@ -335,9 +342,24 @@ every predictor.
 **Requirements:** R ≥ 4.4 and `gzip` on the PATH. `R/utils.R` streams the
 compressed files.
 
+The reviewer can install missing R dependencies with:
+
+```bash
+Rscript install_packages.R
+```
+
+This lists the project dependencies and installs those absent from the active
+R library. It does not install data, change already installed package versions,
+or pin versions. For exact package-version restoration, create a `renv.lock`
+from the verified modelling environment and provide `renv::restore()` instructions.
+
+Equivalent manual installation for the core pipeline:
+
 ```r
-install.packages(c("data.table", "R.utils", "ncdf4", "hdm", "ranger",
-                   "lightgbm", "forecast", "sandwich"))
+install.packages(c("data.table", "ncdf4", "hdm", "ranger",
+                   "lightgbm", "forecast"))
+# Optional legacy viewers use R.utils and sandwich:
+# install.packages(c("R.utils", "sandwich"))
 ```
 
 Run every command from the repository root. The NEA aggregates in
@@ -361,22 +383,42 @@ Rscript R/models/holt_winters.R    # ~1.5 h
 # evaluation (no model fitting, runs in seconds)
 Rscript R/evaluation/evaluate.R
 Rscript R/evaluation/dm_and_combination.R
+Rscript R/evaluation/forecast_tests.R                 # separate Holm-adjusted original-model tests
 Rscript R/evaluation/combination_scenarios_and_gr.R   # reads both SARIMA/HW zips directly
 Rscript R/lasso_selection.R                           # ~5 min, refits LASSO on a subsample
 Rscript R/report_figures.R                            # writes output/figures/fig1_*.png, fig2_*.png
 ```
 
 The forecasts used for the results above are already in `output/forecasts/`,
-so you can skip the model scripts and go straight to evaluation. `evaluate.R`
-reads `sarima_holt_winters_forecast_results.csv` uncompressed, so unzip it
-first:
+so you can skip the model scripts and go straight to evaluation. The three main
+evaluation scripts accept freshly generated `sarima.csv.gz` and
+`holt_winters.csv.gz` through `read_seasonal_forecasts()` in `R/utils.R`.
+When neither is present, they read the supplied combined seasonal CSV or ZIP
+without manual extraction. Generating only one seasonal model is an error,
+preventing silent mixing of fresh and archived predictions. Period labels use
+TARGET time: validation 1 Apr-30 Sep 2025; test 1 Oct 2025-30 Sep 2026.
 
-```bash
-unzip output/forecasts/sarima_holt_winters_forecast_results.zip -d output/forecasts/
-```
+For the optional scenario/GR analysis, also supply `sarima_hw_forecasts.zip`.
+Its assembly from the individual variant model outputs is not yet automated;
+see [the reproducibility audit](docs/REPRODUCIBILITY_AUDIT.md) before attempting
+a completely fresh run of that extension.
+
+All commands are project-root-relative. Raw files must be supplied in the exact
+layout documented in `docs/DATA.md`; the code does not download them. In
+particular, place the yearly EMA CSV.gz files in `data/raw/ema/` (the original
+weekly spreadsheets alone are not an input accepted by the current pipeline).
+Pin the package versions used for the final submission and retain `sessionInfo()`;
+the package installation commands alone do not guarantee identical future fits.
 
 On Windows, R is not on the PATH by default:
 
 ```powershell
 $env:Path += ";$env:LOCALAPPDATA\Programs\R\R-4.4.2\bin\x64"
 ```
+
+## 7. Reproducibility audit
+
+See [docs/REPRODUCIBILITY_AUDIT.md](docs/REPRODUCIBILITY_AUDIT.md) for the
+17 November 2026 checks, fixes, installed/missing dependencies and remaining
+raw-to-results gaps. The data rebuild was verified using cached hourly NEA
+aggregates; a fresh re-estimation of every model was not performed.

@@ -27,7 +27,7 @@
 # Output: data/interim/<var>_<year>_hourly.csv.gz
 #         columns: datetime_hour, station_id, value, n_readings
 #
-# Requires R.utils (fread cannot read .gz without it).
+# Uses read_gz() and the gzip executable
 
 suppressMessages({
   library(data.table)

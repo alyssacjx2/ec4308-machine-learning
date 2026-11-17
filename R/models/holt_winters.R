@@ -19,10 +19,10 @@
 #   out: output/forecasts/holt_winters.csv.gz
 #        output/tables/holt_winters_params_by_refit.csv   alpha, gamma per refit and horizon
 #
-#   Rscript R/holt_winters.R            full run (about 1.5 hours on 2 cores), daily season M = 24
-#   Rscript R/holt_winters.R --period=168   weekly season: 168 hourly adjustments (one per
+#   Rscript R/models/holt_winters.R            full run (about 1.5 hours on 2 cores), daily season M = 24
+#   Rscript R/models/holt_winters.R --period=168   weekly season: 168 hourly adjustments (one per
 #                                       hour of the week); writes holt_winters168.csv.gz, column hw168
-#   Rscript R/holt_winters.R --dry-run  3 refits only, writes *_dryrun files (to check the code)
+#   Rscript R/models/holt_winters.R --dry-run  3 refits only, writes *_dryrun files (to check the code)
 #
 # Output shape matches lasso.R / benchmarks.csv.gz exactly: one row per (forecast origin,
 # h), `datetime` is the ORIGIN and `actual` is y_{t+h}, so evaluate.R can merge the model
@@ -31,8 +31,8 @@
 suppressMessages(library(data.table))
 
 # ---- 0. settings -------------------------------------------------------------
-# THESE MUST MATCH lasso.R / benchmarks.R. If any of H, WINDOW, REFIT or OOS_START differs,
-# the forecasts are for different hours and cannot be compared or DM-tested.
+source("R/utils.R")
+
 IN        <- "data/processed/features.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)
 WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training data
@@ -43,7 +43,7 @@ args      <- commandArgs(trailingOnly = TRUE)
 M         <- as.integer(sub("^--period=", "", grep("^--period=", args, value = TRUE)[1]))
 if (is.na(M)) M <- 24L                  # seasonal period (hours): --period=24 (daily, default) or --period=168 (weekly)
 INIT_LEN  <- max(2L * 168L, 4L * M)     # first weeks of each window set the starting states (2 weeks for M = 24, 4 for M = 168)
-N_CORES   <- as.integer(Sys.getenv("N_CORES", max(1L, parallel::detectCores() - 1L)))
+N_CORES   <- forecast_cores()
 
 # Smoke test: number of refits to run. Inf = full run. `--dry-run` sets it to 3.
 MAX_REFITS <- Inf
@@ -63,7 +63,7 @@ par_map <- function(X, FUN) {
 }
 
 # ---- load --------------------------------------------------------------------
-f <- fread(IN, select = c("datetime", "y"), colClasses = c(datetime = "character"))
+f <- read_gz(IN, select = c("datetime", "y"), colClasses = c(datetime = "character"))
 setorder(f, datetime)
 y <- f$y
 N <- length(y)
