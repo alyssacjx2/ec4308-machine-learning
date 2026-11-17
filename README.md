@@ -41,8 +41,9 @@ R/
   evaluation/
     evaluate.R               merges every model's forecasts and scores them
     dm_and_combination.R     Diebold-Mariano tests, forecast combination
-    forecast_tests.R         alternative Holm-adjusted DM tests (single 44-test family; not used in the report)
-    combination_scenarios_and_gr.R   combination with the extra variants, Granger-Ramanathan weights
+    build_sarima_hw_forecasts.R      joins the SARIMA / Holt-Winters model files into the two zips read below
+    combination_scenarios_and_gr.R   combination with the extra variants, Granger-Ramanathan weights, and the
+                             combination diagnostics quoted in Section 4.2 (vs best member, ranking metric, error correlations)
     compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
   DATA.md                    sources, coverage, conventions, known data quirks
@@ -419,10 +420,18 @@ Rscript R/models/run_forests.R     # ~2 days (random forest + bagging together)
 Rscript R/models/sarima.R          # ~1 h; recursive SARIMA, read by evaluate.R / dm_and_combination.R
 Rscript R/models/sarima_direct.R --period=24   # per-horizon SARIMA in the main results (default is --period=168)
 Rscript R/models/holt_winters.R    # ~1.5 h
+# extension case (168 h season and weekday-holiday term; Appendix F of the report)
+Rscript R/models/sarima_direct.R --period=168
+Rscript R/models/sarima_direct_holiday.R --period=24
+Rscript R/models/sarima_direct_holiday.R --period=168
+Rscript R/models/holt_winters.R --period=168
+Rscript R/models/holt_winters_holiday.R --period=24
+Rscript R/models/holt_winters_holiday.R --period=168
 
 # evaluation (no model fitting, runs in seconds)
 Rscript R/evaluation/evaluate.R
 Rscript R/evaluation/dm_and_combination.R
+Rscript R/evaluation/build_sarima_hw_forecasts.R      # joins the SARIMA/HW model files into the two zips (seconds)
 Rscript R/evaluation/combination_scenarios_and_gr.R   # reads both SARIMA/HW zips directly
 Rscript R/lasso_selection.R                           # ~5 min, refits LASSO on a subsample
 Rscript R/report_figures.R                            # writes output/figures/fig1_*.png, fig2_*.png
@@ -443,21 +452,23 @@ The report-aligned scenario/GR analysis reads `sarima_hw_forecasts.zip`, which
 is already supplied under `output/forecasts/`. Inside it are two joined tables:
 `forecasts_without_holiday.csv` and `forecasts_with_holiday.csv`.
 
-The model scripts instead save separate files, such as
-`sarima24_direct.csv.gz`, `sarima168_direct.csv.gz`,
-`sarima24_direct_hol.csv.gz`, `sarima168_direct_hol.csv.gz`,
-`holt_winters.csv.gz`, `holt_winters168.csv.gz`,
+The model scripts save separate files, such as `sarima24_direct.csv.gz`,
+`sarima168_direct.csv.gz`, `sarima24_direct_hol.csv.gz`,
+`sarima168_direct_hol.csv.gz`, `holt_winters.csv.gz`, `holt_winters168.csv.gz`,
 `holt_winters_hol.csv.gz` and `holt_winters168_hol.csv.gz`.
-The missing automated step is to join these on (origin, horizon), check actual
-values/coverage, rename columns to the scenario loader's schema, and package
-the two combined tables into the ZIP. No model estimation occurs in this step.
+`R/evaluation/build_sarima_hw_forecasts.R` joins them on (origin, horizon),
+checks that the actual demand and the origins agree across files, renames the
+columns to the scenario loader's schema and writes `sarima_hw_forecasts.zip`.
+If `sarima.csv.gz` and `holt_winters.csv.gz` are also present it rebuilds
+`sarima_holt_winters_forecast_results.zip` too. No model estimation occurs in this
+step. Run on the supplied forecasts split back into the eight files, it reproduces
+both archives byte for byte.
 
 - **Reproduce saved report results:** keep the supplied archives and run
   `Rscript R/evaluation/combination_scenarios_and_gr.R`.
-- **Rebuild the extension from raw data:** estimate the required seasonal
-  variants, then assemble the archive before running the scenario script.
-  Archive assembly is not yet implemented as a repository script, so this
-  second route is not currently a single automatic pipeline.
+- **Rebuild the extension from raw data:** run the model scripts listed in
+  section 6, then `Rscript R/evaluation/build_sarima_hw_forecasts.R`, then the
+  scenario script.
 
 All commands are project-root-relative. Raw files must be supplied in the exact
 layout documented in `docs/DATA.md`; the code does not download them. In
@@ -481,8 +492,7 @@ against supplied forecasts without re-estimating models. A complete fresh run
 of raw minute-level NEA aggregation and every model was not performed.
 
 Remaining tasks are to verify the modelling environment from a clean setup,
-record the exact package versions (no `renv.lock` is currently supplied), include
-raw data in the submission archive despite its Git ignore rules, and automate
-the seasonal-extension handoff if claiming a fully automatic raw-to-results run.
+record the exact package versions (no `renv.lock` is currently supplied) and
+include raw data in the submission archive despite its Git ignore rules.
 The original weekly-EMA-to-yearly-CSV conversion is outside the R pipeline; the
 supplied yearly CSVs are the declared starting inputs.
