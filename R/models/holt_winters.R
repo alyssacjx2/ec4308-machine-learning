@@ -1,32 +1,15 @@
 # holt_winters.R ---------------------------------------------------------------
 #
-#   Additive Holt-Winters benchmark (HW24) on demand alone (no predictors): a level plus
-#   one daily seasonal cycle of 24 hourly adjustments, no trend (Taylor 2003 error-
-#   correction form). Each hour the one-step error e_t updates the level (alpha) and the
-#   adjustment of that hour of the day (delta = gamma * (1 - alpha)):
-#       e_t = y_t - (l_{t-1} + d_{t-24});  l_t = l_{t-1} + alpha e_t;  d_t = d_{t-24} + delta e_t
-#       forecast(t + h) = l_t + d_{slot(t+h)}
-#   It has only the daily cycle, so it cannot use the weekly pattern.
+#   Additive Holt-Winters on demand alone: a level plus one seasonal cycle of M = 24
+#   or 168 hourly adjustments, no trend (Taylor 2003 error-correction form). alpha and
+#   gamma are re-tuned every refit, separately for each horizon h, by minimising the
+#   squared h-step error over the window (L-BFGS-B).
 #
-#   Tuning: alpha and gamma in [0, 1] are chosen at every weekly refit and SEPARATELY FOR
-#   EACH HORIZON h (direct forecasting) by minimising the sum of squared h-step-ahead
-#   errors over the training window (L-BFGS-B); the first two weeks of the window only
-#   set the starting states. Between refits the parameters are frozen but the states
-#   update every hour. A one-step criterion would give near-naive day-ahead forecasts,
-#   hence one fit per horizon.
+#   in : data/processed/features.csv.gz   (datetime and y only)
+#   out: output/forecasts/holt_winters.csv.gz   column hw24  (--period=168: holt_winters168.csv.gz, hw168)
+#        output/tables/holt_winters{M}_params_by_refit.csv
 #
-#   in : data/processed/features.csv.gz   (only datetime and y are used)
-#   out: output/forecasts/holt_winters.csv.gz
-#        output/tables/holt_winters_params_by_refit.csv   alpha, gamma per refit and horizon
-#
-#   Rscript R/models/holt_winters.R            full run (about 1.5 hours on 2 cores), daily season M = 24
-#   Rscript R/models/holt_winters.R --period=168   weekly season: 168 hourly adjustments (one per
-#                                       hour of the week); writes holt_winters168.csv.gz, column hw168
-#   Rscript R/models/holt_winters.R --dry-run  3 refits only, writes *_dryrun files (to check the code)
-#
-# Output shape matches lasso.R / benchmarks.csv.gz exactly: one row per (forecast origin,
-# h), `datetime` is the ORIGIN and `actual` is y_{t+h}, so evaluate.R can merge the model
-# files on (datetime, h) without any re-alignment.
+#   Rscript R/models/holt_winters.R   (or --period=168; --dry-run = 3 refits)
 
 suppressMessages(library(data.table))
 
@@ -37,15 +20,13 @@ IN        <- "data/processed/features.csv.gz"
 H         <- c(1L, 6L, 12L, 24L)
 WINDOW    <- as.integer(1.5 * 365 * 24) # 13,140 hours (1.5 years) of training data
 REFIT     <- 168L                       # refit every week
-OOS_START <- "2018-07-16 00:00:00"      # first forecast origin: the first Monday
-                                        # with a full window behind it
+OOS_START <- "2018-07-16 00:00:00"      # first forecast origin
 args      <- commandArgs(trailingOnly = TRUE)
 M         <- as.integer(sub("^--period=", "", grep("^--period=", args, value = TRUE)[1]))
-if (is.na(M)) M <- 24L                  # seasonal period (hours): --period=24 (daily, default) or --period=168 (weekly)
-INIT_LEN  <- max(2L * 168L, 4L * M)     # first weeks of each window set the starting states (2 weeks for M = 24, 4 for M = 168)
+if (is.na(M)) M <- 24L                  # seasonal period in hours (24 or 168)
+INIT_LEN  <- max(2L * 168L, 4L * M)     # start of each window only sets the starting states
 N_CORES   <- forecast_cores()
 
-# Smoke test: number of refits to run. Inf = full run. `--dry-run` sets it to 3.
 MAX_REFITS <- Inf
 DRY <- "--dry-run" %in% args
 if (DRY) MAX_REFITS <- 3L
@@ -55,7 +36,7 @@ OUT <- paste0("output/forecasts/holt_winters", TAG, SFX, ".csv.gz")
 COL <- paste0("hw", M)
 TAB <- "output/tables"
 
-# mclapply forks, which Windows cannot do, so fall back to a plain loop there.
+# mclapply cannot fork on Windows: plain loop there.
 par_map <- function(X, FUN) {
   if (N_CORES > 1L && .Platform$OS.type != "windows")
     parallel::mclapply(X, FUN, mc.cores = N_CORES, mc.preschedule = FALSE)
@@ -73,9 +54,7 @@ if (is.na(T_first)) stop("OOS_START not found in features: ", OOS_START)
 if (T_first <= WINDOW) stop("no full window before OOS_START")
 
 # ---- 1. the filter -----------------------------------------------------------
-# Runs t_start..t_end; returns, for every t >= fc_from, the h-step forecast made at t
-# (state after seeing y_t). The seasonal slot is the absolute hour index, so the daily
-# position of the target hour is always right.
+# Runs t_start..t_end; returns the h-step forecast made at every t >= fc_from.
 hw_filter <- function(y, alpha, delta, l0, d0, t_start, t_end, h, fc_from = t_start) {
   l <- l0; d <- d0
   F <- rep(NA_real_, t_end)
@@ -90,8 +69,7 @@ hw_filter <- function(y, alpha, delta, l0, d0, t_start, t_end, h, fc_from = t_st
 }
 
 # ---- 2. one window, one horizon ----------------------------------------------
-# Window i0..iE (iE = refit origin). Starting states from the first INIT_LEN hours, then
-# alpha, gamma by minimising the squared h-step error over the rest of the window.
+# Starting states from the first INIT_LEN hours, then alpha and gamma on the rest of the window.
 fit_hw <- function(i0, iE, h) {
   ini <- i0:(i0 + INIT_LEN - 1L)
   l0  <- mean(y[ini]); slot <- (ini - 1L) %% M + 1L
@@ -107,8 +85,7 @@ fit_hw <- function(i0, iE, h) {
 }
 
 # ---- 3. one refit block ------------------------------------------------------
-# Estimate on the WINDOW ending at the refit origin T0 (all known at T0), then run the
-# frozen-parameter filter forward over the block's origins t = T0 .. T0 + REFIT - 1.
+# Estimate on the window ending at T0, then run the frozen-parameter filter over the next REFIT origins.
 refits <- seq(T_first, N - 1L, by = REFIT)
 if (is.finite(MAX_REFITS)) refits <- head(refits, MAX_REFITS)
 

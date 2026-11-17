@@ -1,48 +1,15 @@
-# sarima_direct_holiday.R --------------------------------------------------------------
+# sarima_direct_holiday.R ------------------------------------------------------
 #
-#   Seasonal ARIMA with a SEPARATE FIT FOR EACH HORIZON h = 1, 6, 12, 24, and a choice of
-#   seasonal period (24 h = daily, 168 h = weekly).
+#   sarima_direct.R plus a weekday public-holiday term: regression with ARMA errors on
+#   the seasonal differences, w_t = b'dx_t + u_t, where x is 1 on a weekday public
+#   holiday (separately for four parts of the day) and dx_t = x_t - x_{t-S}. b is
+#   estimated with the ARMA coefficients on the same per-horizon h-step loss.
 #
-#   Model: ARIMA(p,0,q)(P,1,Q)[S] on demand alone (no predictors). The seasonal difference
-#   w_t = y_t - y_{t-S} is taken first; an ARMA model with the usual SARIMA structure
-#   (non-seasonal lags times seasonal lags) is then put on w.
+#   in : data/processed/features.csv.gz   (datetime, y, is_holiday, dow)
+#   out: output/forecasts/sarima{S}_direct_hol.csv.gz   column sarima{S}dh
+#        output/tables/sarima{S}_direct_hol_coef_by_refit.csv, sarima{S}_direct_orders.rds
 #
-#   What is different from sarima.R:
-#     * sarima.R estimates ONE set of coefficients per week by one-step-ahead conditional
-#       sum of squares and iterates it 24 steps. Here the coefficients are re-estimated
-#       every week SEPARATELY FOR EACH h, by minimising the squared h-step-ahead forecast
-#       error over the training window. The forecast for horizon h still comes from running
-#       the ARMA recursion forward h steps (future errors set to zero); only the criterion
-#       the coefficients are chosen on changes. Same idea as holt_winters.R, which tunes
-#       alpha and gamma per horizon.
-#     * The seasonal period is an option (--period=24 or --period=168).
-#     * The fit does not call Arima()/predict(): it is a small vectorised routine, because
-#       the h-step criterion needs the h-step forecast at every origin of the window at
-#       every optimiser step.
-#
-#   Orders (p, q, P, Q) are chosen ONCE by AICc (auto.arima, D = 1, d = 0) on the first
-#   rolling window and cached in output/tables/sarima{S}_direct_orders.rds. Coefficients
-#   are kept stationary / invertible through a PACF reparametrisation, started from the
-#   auto.arima estimates. Between refits the coefficients are frozen but the state (past
-#   errors) is updated every hour: the frozen model is run over the whole window plus the
-#   block, so the forecast at origin t only uses data up to t.
-#
-#   in : data/processed/features.csv.gz   (only datetime and y are used)
-#   out: output/forecasts/sarima{S}_direct.csv.gz     column sarima{S}d
-#        output/tables/sarima{S}_direct_coef_by_refit.csv
-#        output/tables/sarima{S}_direct_orders.rds
-#
-#   Rscript R/models/sarima_direct_holiday.R --period=168     full run (weekly season)
-#   Rscript R/models/sarima_direct_holiday.R --period=168 --dry-run   3 refits only, writes *_dryrun files
-#   Rscript R/models/sarima_direct_holiday.R --period=24      same model with a daily season
-#   Rscript R/models/sarima_direct_holiday.R --period=168   (this script always includes the holiday regressors):
-#       regression with ARMA errors on the seasonal differences, w_t = b' dx_t + u_t, where
-#       x is 1 on a weekday public holiday (separately for four parts of the day) and
-#       dx_t = x_t - x_{t-S}. b is estimated together with the ARMA coefficients on the same
-#       per-horizon h-step loss. Writes sarima{S}_direct_hol.csv.gz, column sarima{S}dh.
-#
-# Output shape matches lasso.R / benchmarks.csv.gz exactly: one row per (forecast origin,
-# h), `datetime` is the ORIGIN and `actual` is y_{t+h}.
+#   Rscript R/models/sarima_direct_holiday.R --period=168   (or --period=24; --dry-run = 3 refits)
 
 suppressMessages({
   library(data.table)
@@ -50,7 +17,7 @@ suppressMessages({
 })
 
 # ---- 0. settings -------------------------------------------------------------
-# THESE MUST MATCH lasso.R / benchmarks.R (H, WINDOW, REFIT, OOS_START).
+# H, WINDOW, REFIT and OOS_START must match benchmarks.R.
 args <- commandArgs(trailingOnly = TRUE)
 get_arg <- function(name, default) {
   a <- grep(paste0("^--", name, "="), args, value = TRUE)
@@ -97,10 +64,9 @@ HMAX <- max(H)
 if (HMAX > S) stop("the forecast needs h <= S so that y_{t+h-S} is known at t")
 if (!dir.exists(TAB)) dir.create(TAB, recursive = TRUE)
 
-# Holiday regressors: 1 on a public holiday that falls on a weekday (dow 1..5), separately for
-# four parts of the day (00-05, 06-11, 12-17, 18-23), so the holiday effect can differ by time of day.
-# Known in advance from the calendar, so the value at the TARGET hour is usable at the origin.
-# Padded with zeros beyond the data (those rows are never scored).
+# Holiday regressors: 1 on a weekday public holiday, separately for four parts of the day
+# (00-05, 06-11, 12-17, 18-23). Known from the calendar, so the target-hour value is usable
+# at the origin; padded with zeros beyond the data.
 NB <- if (HOL) 4L else 0L
 part <- as.integer(substr(f$datetime, 12, 13)) %/% 6L + 1L
 holwd <- as.integer(f$is_holiday == 1L & f$dow %in% 1:5)
@@ -130,9 +96,7 @@ cat(sel$desc, "\n")
 ip <- seq_len(p); iq <- p + seq_len(q); iP <- p + q + seq_len(P); iQ <- p + q + P + seq_len(Q)
 
 # ---- 2. ARMA machinery -------------------------------------------------------
-# Unconstrained r  ->  stationary AR-type coefficients via partial autocorrelations
-# (Durbin-Levinson); and the inverse. MA polynomial 1 + theta B is invertible iff the AR-type
-# polynomial 1 - (-theta) B is stationary, so theta = -transform(r).
+# PACF reparametrisation: unconstrained r <-> stationary / invertible coefficients.
 pacf2coef <- function(r) {
   n <- length(r); if (!n) return(numeric(0))
   pk <- tanh(r); ph <- pk[1]
@@ -164,8 +128,8 @@ expand_poly <- function(par) {
   list(A = -polymul(c(1, -par[ip]), a2)[-1], M = polymul(c(1, par[iq]), m2)[-1])
 }
 
-# ws = seasonally differenced series. One-step errors e_t (started at zero), then the
-# k-step ARMA forecasts what_{t+k|t} for k = 1..hk at every origin in tt (future errors = 0).
+# ws = seasonally differenced series. One-step errors, then k-step ARMA forecasts for
+# k = 1..hk at every origin in tt (future errors set to zero).
 arma_paths <- function(par, ws, tt, hk) {
   ex <- expand_poly(par); A <- ex$A; M <- ex$M
   ia <- which(A != 0); im <- which(M != 0); LA <- length(A); n <- length(ws)
@@ -186,10 +150,8 @@ seas_diff <- function(v) v[(S + 1L):length(v)] - v[1:(length(v) - S)]
 seas_diff_m <- function(M) M[(S + 1L):nrow(M), , drop = FALSE] - M[1:(nrow(M) - S), , drop = FALSE]
 
 # ---- 3. fit one horizon on one window -----------------------------------------
-# Window = y[i0..T0]. Regression with ARMA errors on the seasonal differences:
-#   w_t = b' dx_t + u_t,  u_t ~ ARMA,  dx_t = x_t - x_{t-S}   (no regressors when --holiday is off)
-# Minimises the mean squared h-step error of w over the window's origins, over the ARMA
-# coefficients and b together. The forecast is the ARMA forecast of u plus b' dx at the target hour.
+# Minimise the mean squared h-step error of w over the ARMA coefficients and b together.
+# The forecast is the ARMA forecast of u plus b'dx at the target hour.
 fit_h <- function(ws, DX, h, z0) {
   n <- length(ws); LA <- length(expand_poly(rep(0.1, p + q + P + Q))$A)
   tt <- (LA + BURN + 1L):(n - h)
