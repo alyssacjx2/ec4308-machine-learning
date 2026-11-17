@@ -62,8 +62,9 @@ if (HMAX > S) stop("the forecast needs h <= S so that y_{t+h-S} is known at t")
 if (!dir.exists(TAB)) dir.create(TAB, recursive = TRUE)
 
 # ---- 1. orders: AICc on the first window (cached) -----------------------------
-if (file.exists(ORD_FILE)) {
+if (file.exists(ORD_FILE)) {          # cached orders; delete the .rds to re-run auto.arima
   sel <- readRDS(ORD_FILE)
+  cat("using cached orders from", ORD_FILE, "\n")
 } else {
   cat(sprintf("choosing orders by AICc on the first window, S = %d (slow for S = 168, ~8 min) ...\n", S))
   first_win <- (T_first - WINDOW + 1L):T_first

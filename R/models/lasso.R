@@ -189,10 +189,9 @@ lasso.rolling.window <- function(h) {
       bfp <- numeric(ncol(fit$M) - 1L); bfp[fit$keep[fit$sel]] <- tail(fit$pb, length(fit$sel))
       ap  <- cell_effects(fit, bfp)
       gp <- match(hd[t + h], fit$lv)
-      # cell unseen in this window -> grand mean
-      a[is.na(a)] <- mean(a, na.rm = TRUE); ap[is.na(ap)] <- mean(ap, na.rm = TRUE)
-      pred_l[idx] <- a[gp]  + xb
-      pred_p[idx] <- ap[gp] + xbp
+      # cell unseen in this window -> mean of the cell effects
+      pred_l[idx] <- fifelse(is.na(gp), mean(a, na.rm = TRUE), a[gp])  + xb
+      pred_p[idx] <- fifelse(is.na(gp), mean(ap, na.rm = TRUE), ap[gp]) + xbp
     } else {
       pred_l[idx] <- fit$b0 + xb
       pred_p[idx] <- fit$pb[1L] + xbp

@@ -75,8 +75,9 @@ for (k in seq_len(NB)) X[seq_len(N), k] <- holwd * (part == k)
 cat("holiday regressors:", if (HOL) "weekday public holiday x 4 parts of the day" else "none", "\n")
 
 # ---- 1. orders: AICc on the first window (cached) -----------------------------
-if (file.exists(ORD_FILE)) {
+if (file.exists(ORD_FILE)) {          # cached orders; delete the .rds to re-run auto.arima
   sel <- readRDS(ORD_FILE)
+  cat("using cached orders from", ORD_FILE, "\n")
 } else {
   cat(sprintf("choosing orders by AICc on the first window, S = %d (slow for S = 168, ~8 min) ...\n", S))
   first_win <- (T_first - WINDOW + 1L):T_first
