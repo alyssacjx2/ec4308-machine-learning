@@ -1,0 +1,63 @@
+# ---- Data --------------------------------------------------------------------
+# Raw data is never committed: ~1.8 GB gzipped, and GitHub rejects files >100 MB.
+# It is shared separately (see docs/DATA.md); no script downloads it.
+data/**
+!data/**/
+!data/**/.gitkeep
+
+# ...except the small derived outputs every teammate needs (~37 MB total), so
+# nobody has to download 1.8 GB of raw data or re-run a 45-minute aggregation
+# just to start modelling.
+#
+# NOTE: these are generated files. If you change aggregate_nea_hourly.R or
+# station_panel.R, re-run it and commit the new outputs, or they go stale.
+!data/interim/*_hourly.csv.gz
+!data/processed/station_panel.csv
+
+# Large intermediate model output (forecast matrices). Figures and tables in
+# output/figures and output/tables ARE tracked - they go in the report.
+output/forecasts/**
+!output/forecasts/
+!output/forecasts/.gitkeep
+# ...except the finished forecast matrices themselves (~8 MB gzipped each).
+# evaluate.R has to merge every model's file, so they need to reach one place.
+# Commit these only once a model's settings are final, not after exploratory runs.
+!output/forecasts/*.csv.gz
+!output/forecasts/*.zip
+# ...but not per-model SARIMA / Holt-Winters files: they are packed into the
+# committed zips, and a stray sarima.csv.gz would change what evaluate.R reads.
+output/forecasts/sarima*.csv.gz
+output/forecasts/holt_winters*.csv.gz
+output/forecasts/*_dryrun.csv.gz
+
+# Resumable random forest / bagging state
+output/checkpoints/
+
+# Extraction gap logs
+logs/**
+!logs/
+!logs/.gitkeep
+
+# ---- Credentials -----------------------------------------------------------
+.Renviron
+.env
+*_key.txt
+*cdsapirc*
+
+# ---- R / RStudio -----------------------------------------------------------
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+renv/library/
+renv/staging/
+
+# ---- OS ---------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Misc -------------------------------------------------------------------
+*.log
+~$*
