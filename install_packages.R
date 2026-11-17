@@ -9,7 +9,7 @@ PROJECT_PACKAGES <- c(
   "ranger",    # random forest and bagging
   "lightgbm",  # gradient-boosted trees
   "forecast",  # seasonal ARIMA order selection and estimation
-  "R.utils",   # direct gzip reads in optional older viewers/selection code
+  "R.utils",   # lets fread() read .gz files (lasso_selection.R)
   "sandwich"   # Newey-West calculations in the optional LightGBM viewer
 )
 

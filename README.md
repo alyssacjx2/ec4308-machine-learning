@@ -40,14 +40,14 @@ R/
   report_figures.R           report Figures 1-2 (daily mean demand, demand by hour and day type)
   evaluation/
     evaluate.R               merges every model's forecasts and scores them
-    dm_and_combination.R     Diebold-Mariano tests, forecast combination
+    dm_and_combination.R     earlier combination + unadjusted DM tests (superseded; uses the recursive SARIMA)
     build_sarima_hw_forecasts.R      joins the SARIMA / Holt-Winters model files into the two zips read below
-    combination_scenarios_and_gr.R   combination with the extra variants, Granger-Ramanathan weights, and the
-                             combination diagnostics quoted in Section 4.2 (vs best member, ranking metric, error correlations)
+    combination_scenarios_and_gr.R   the report's combination, Holm-adjusted DM tests, Granger-Ramanathan weights
+                             and the combination diagnostics quoted in Section 4.2
     compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
   DATA.md                    sources, coverage, conventions, known data quirks
-  FORESTS.md                 how the random forest / bagging runs were set up
+  FORESTS.md                 random forest / bagging run notes (current settings: Section 4 below)
   EC4308 Group 10 Project Proposal.pdf
 data/
   raw/                       as downloaded (not committed)
@@ -105,7 +105,7 @@ for different hours and could not be compared or DM-tested.
 | Setting | Value |
 |---|---|
 | Horizons | h = 1, 6, 12, 24; every reported model is fitted separately for each horizon (the regressions and ensembles are direct models; SARIMA and Holt-Winters choose their coefficients on the h-step error) |
-| Training window | rolling, 1.5 years = 13,140 (origin, target) pairs |
+| Training window | rolling, 1.5 years = 13,140 hours (the regressions and ensembles use 13,140 (origin, target) pairs; SARIMA and Holt-Winters use the 13,140 hours of demand in the window) |
 | Refit | every 168 hours (weekly) |
 | First forecast origin | 2018-07-16 00:00:00 |
 | Training-label availability | a refit at T0 uses only observed targets (s + h ≤ T0); weather imputation still has the documented look-ahead limitation |
@@ -121,7 +121,7 @@ for different hours and could not be compared or DM-tested.
 | Random forest | `run_forests.R` | 500 trees, mtry = ⌊p/3⌋ = 19 (h=1/6/12), 18 (h=24), min node size 5 |
 | Bagging | `run_forests.R` | the same forest with mtry = p = 57 (h=1/6/12), 56 (h=24) |
 | LightGBM | `lgbm.R` | tree count, size and loss tuned on the last 4 weeks of each window, retuned about monthly |
-| Combination | `dm_and_combination.R` | equal-weight average of the 3 models with the lowest validation RMSE (Apr–Sep 2025) |
+| Combination | `combination_scenarios_and_gr.R` | equal-weight average of the 3 models with the lowest validation RMSE (Apr–Sep 2025) |
 
 **EMA's forecast is a reference level, not a horizon-matched benchmark.** EMA
 publishes one near-term forecast per period and does not record how far ahead
@@ -206,21 +206,6 @@ improve at 24 hours. RF is worse at 1, 6 and 12 hours, with no detectable
 difference at 24 hours. Other individual candidates are worse at every horizon.
 At 168 lags, the combination at 6 hours and LightGBM at 12 hours are no longer
 significant at 5%. Non-rejection is not proof of equal accuracy.
-
-| Model | h = 1 | h = 6 | h = 12 | h = 24 |
-|---|---|---|---|---|
-| Combination | 24.1 | **67.6** | **83.8** | 92.1 |
-| post-LASSO | 25.6 | 72.5 | 86.9 | **91.2** |
-| LASSO | 25.6 | 72.6 | 87.0 | 91.5 |
-| AR(p) by BIC | **23.9** | 68.3 | 87.6 | 98.3 |
-| LightGBM | 29.4 | 79.3 | 94.9 | 109.3 |
-| Random forest | 35.1 | 83.4 | 96.8 | 103.9 |
-| Bagging | 34.3 | 90.2 | 103.7 | 110.0 |
-| SARIMA | 36.2 | 153.6 | 197.7 | 207.3 |
-| Holt-Winters (HW24) | 49.7 | 194.4 | 217.5 | 214.4 |
-| Seasonal naive (168h) | 160.5 | 160.5 | 160.5 | 160.5 |
-| Seasonal naive (24h) | 204.4 | 204.4 | 204.4 | 204.4 |
-| *EMA (reference)* | *115.4* | *115.4* | *115.4* | *115.4* |
 
 - **The combination** is the equal-weight average of LASSO, post-LASSO and
   the AR. Each member was chosen by validation RMSE (Apr–Sep 2025), so the
@@ -361,8 +346,10 @@ day type, so a public holiday takes the Sunday profile, as in `lasso.R`.
   one-hour lag is always kept. From h = 6 the 24 h and 72 h moving averages
   are kept in 88–100% of refits. Together with squared temperature (kept in
   91–100% at h = 6 and 12), they carry the largest weather coefficients.
-- **Rainfall and wind** (current rainfall, wind speed and direction) are kept
-  in 74–100% of refits at every horizon, and `is_holiday` in 74–93%.
+- **Rainfall and wind:** current rainfall is kept in 81–100% of refits, wind
+  speed in 84–100% and the cosine of wind direction in 74–100%. The sine of
+  wind direction is kept in only 47–51% of refits at h = 1, 6 and 12 (86% at
+  h = 24). `is_holiday` is kept in 74–93%.
 - Between 16 (h = 1) and 22 (h = 12, 24) predictors are kept in at least half
   the refits.
 
@@ -396,10 +383,12 @@ from the verified modelling environment and provide `renv::restore()` instructio
 Equivalent manual installation for the core pipeline:
 
 ```r
-install.packages(c("data.table", "ncdf4", "hdm", "ranger",
+install.packages(c("data.table", "R.utils", "ncdf4", "hdm", "ranger",
                    "lightgbm", "forecast"))
-# Optional legacy viewers use R.utils and sandwich:
-# install.packages(c("R.utils", "sandwich"))
+# R.utils lets fread() read .gz files (needed by lasso_selection.R).
+# Optional: sandwich (view_lgbm.R), Rcpp (faster Holt-Winters holiday filter),
+# zip (build_sarima_hw_forecasts.R; falls back to the system zip)
+# install.packages(c("sandwich", "Rcpp", "zip"))
 ```
 
 Run every command from the repository root. The NEA aggregates in
@@ -416,11 +405,14 @@ Rscript R/data_processing/build_features.R         # ~1 min -> features.csv.gz
 Rscript R/models/benchmarks.R      # ~2.5 h
 Rscript R/models/lasso.R           # ~1 h
 Rscript R/models/lgbm.R            # ~45 min on 7 cores
-Rscript R/models/run_forests.R     # ~2 days (random forest + bagging together)
+Rscript R/models/run_forests.R     # ~2 days (random forest + bagging together); see note below
 Rscript R/models/sarima.R          # ~1 h; recursive SARIMA, read by evaluate.R / dm_and_combination.R
 Rscript R/models/sarima_direct.R --period=24   # per-horizon SARIMA in the main results (default is --period=168)
 Rscript R/models/holt_winters.R    # ~1.5 h
-# extension case (168 h season and weekday-holiday term; Appendix F of the report)
+# 168 h season and weekday-holiday variants (Appendix F of the report).
+# Required to rebuild sarima_hw_forecasts.zip: build_sarima_hw_forecasts.R needs all
+# eight SARIMA/HW files, including the two 24 h runs above. Runtimes were not recorded;
+# the 168 h runs are slower than the 24 h ones.
 Rscript R/models/sarima_direct.R --period=168
 Rscript R/models/sarima_direct_holiday.R --period=24
 Rscript R/models/sarima_direct_holiday.R --period=168
@@ -428,17 +420,31 @@ Rscript R/models/holt_winters.R --period=168
 Rscript R/models/holt_winters_holiday.R --period=24
 Rscript R/models/holt_winters_holiday.R --period=168
 
-# evaluation (no model fitting, runs in seconds)
-Rscript R/evaluation/evaluate.R
-Rscript R/evaluation/dm_and_combination.R
-Rscript R/evaluation/build_sarima_hw_forecasts.R      # joins the SARIMA/HW model files into the two zips (seconds)
-Rscript R/evaluation/combination_scenarios_and_gr.R   # reads both SARIMA/HW zips directly
-Rscript R/lasso_selection.R                           # ~5 min, refits LASSO on a subsample
-Rscript R/report_figures.R                            # writes output/figures/fig1_*.png, fig2_*.png
+# evaluation: runs in seconds on a fresh clone, using the committed forecasts
+Rscript R/evaluation/combination_scenarios_and_gr.R   # report tables (Sections 4.1-4.3, Appendices C-F)
+Rscript R/evaluation/evaluate.R                       # full-sample and validation scores
+Rscript R/evaluation/dm_and_combination.R             # superseded; kept for reference
+
+# need inputs that are not committed
+Rscript R/evaluation/build_sarima_hw_forecasts.R      # needs the eight SARIMA/HW model files
+Rscript R/lasso_selection.R                           # needs features.csv.gz; ~5 min
+Rscript R/report_figures.R                            # needs features.csv.gz; writes fig1_*.png, fig2_*.png
 ```
 
 The forecasts used for the results above are already in `output/forecasts/`,
-so you can skip the model scripts and go straight to evaluation. The two simpler
+so you can skip the model scripts and go straight to evaluation.
+
+**`run_forests.R` on a fresh clone checks rather than replaces.** It restores the
+committed `rf_bagging.csv.gz` as its starting point. The importance checkpoints
+are not committed, so it refits every window and stops if any forecast differs
+from the committed one by more than 0.000001 MW. It never overwrites the
+committed forecasts. To produce new forest forecasts, move `rf_bagging.csv.gz`
+out of `output/forecasts/` first.
+
+**Do not commit `sarima.csv.gz` or `holt_winters.csv.gz`.** When both exist in
+`output/forecasts/`, `evaluate.R` and `dm_and_combination.R` read them instead of
+the committed archive (see below). `combination_scenarios_and_gr.R` always reads
+the archives. The two simpler
 evaluation scripts accept freshly generated `sarima.csv.gz` and
 `holt_winters.csv.gz` through `read_seasonal_forecasts()` in `R/utils.R`.
 When neither is present, they read the supplied combined seasonal CSV or ZIP
@@ -462,13 +468,13 @@ columns to the scenario loader's schema and writes `sarima_hw_forecasts.zip`.
 If `sarima.csv.gz` and `holt_winters.csv.gz` are also present it rebuilds
 `sarima_holt_winters_forecast_results.zip` too. No model estimation occurs in this
 step. Run on the supplied forecasts split back into the eight files, it reproduces
-both archives byte for byte.
+the CSVs inside both archives byte for byte (the zip files themselves differ
+only in their timestamps).
 
 - **Reproduce saved report results:** keep the supplied archives and run
   `Rscript R/evaluation/combination_scenarios_and_gr.R`.
-- **Rebuild the extension from raw data:** run the model scripts listed in
-  section 6, then `Rscript R/evaluation/build_sarima_hw_forecasts.R`, then the
-  scenario script.
+- **Rebuild from raw data:** run all eight SARIMA/HW runs listed above, then
+  `Rscript R/evaluation/build_sarima_hw_forecasts.R`, then the scenario script.
 
 All commands are project-root-relative. Raw files must be supplied in the exact
 layout documented in `docs/DATA.md`; the code does not download them. In
@@ -494,5 +500,18 @@ of raw minute-level NEA aggregation and every model was not performed.
 Remaining tasks are to verify the modelling environment from a clean setup,
 record the exact package versions (no `renv.lock` is currently supplied) and
 include raw data in the submission archive despite its Git ignore rules.
+
+Known limitations of the design:
+
+- **The test year was not fully held out during development.** Test-year scores
+  were first computed on 7 November 2026. LASSO (holidays coded as Sundays,
+  12 Nov), the forests (15 Nov) and the per-horizon SARIMA and Holt-Winters
+  variants (13-15 Nov) were changed afterwards.
+- **Weather imputation and the station panel use the full sample.** The
+  month-by-hour climatology and the choice of stations use 2017-2026 data. No
+  test-year hour has imputed weather; 6% of hours before 2025 do.
+- **Package versions:** forecasts were produced on different machines, and their
+  package versions were not recorded. `hdm` (LASSO) and `ranger` (forests) have
+  not been re-run by anyone else.
 The original weekly-EMA-to-yearly-CSV conversion is outside the R pipeline; the
 supplied yearly CSVs are the declared starting inputs.
