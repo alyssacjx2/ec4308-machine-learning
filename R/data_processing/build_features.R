@@ -22,11 +22,9 @@
 #     integers and model scripts expand them per window with model.matrix(), which
 #     is cheaper and keeps this file committable.
 #
-#   * nem_forecast_mw as a predictor. It is EMA's own operational forecast and
-#     the headline benchmark (RMSE 179 MW, MAPE 2.29%). Feeding it in as an
-#     input would make "can ML beat EMA's forecast" unanswerable, so it travels
-#     as nem_h<h> - the benchmark's prediction of the same target - and nothing
-#     else. Add it to the feature set only as a separate, clearly-labelled run.
+#   * nem_forecast_mw as a predictor. It is EMA's own operational forecast, used
+#     only as a reference level, so it travels as nem_h<h> (EMA's forecast of the
+#     same target) and is never a model input.
 
 suppressMessages(library(data.table))
 source("R/utils.R")
@@ -145,7 +143,7 @@ cat("  hours with any imputed weather:", sum(d$imp_any),
 f <- d[, .(datetime, y = demand_mw)]
 
 # calendar. `dow`: 0 = Sunday. t_index is a linear trend - demand grew ~30%
-# across the sample, though a 3-year rolling window absorbs most of that.
+# across the sample, though the 1.5-year rolling window absorbs most of that.
 p <- as.POSIXct(d$datetime, tz = TZ)
 f[, `:=`(hr      = d$hr,
          dow     = as.integer(format(p, "%w")),
@@ -250,5 +248,5 @@ for (h in H) {
 
 fwrite(f, OUT)
 cat("\nwritten:", OUT, "\n")
-cat("NOTE: hour x day-of-week interactions are NOT materialised here - expand\n")
-cat("      them per window in forecast.R with model.matrix(~ factor(hr):factor(dow)).\n")
+cat("NOTE: hour x day-type interactions are not materialised here; the model\n")
+cat("      scripts (benchmarks.R, lasso.R) build them within each window.\n")
