@@ -45,10 +45,13 @@ Compiled from 562 weekly EMA spreadsheets; see the README inside the zip for pro
 | Wind speed | 2016–Sep 2026 | |
 | Wind direction | 2016–Sep 2026 | circular — do not average naively |
 
-Source: data.gov.sg bulk annual downloads. The 45 dataset IDs for 2016–2024 are in
-`docs/nea_dataset_manifest.json`; the 2025 and 2026 files follow the same
-`Historical<Var>acrossSingapore<YYYY>` naming but are not yet in the manifest.
-`R/aggregate_nea_hourly.R` aggregates all 55 to hourly × station in `data/interim/`.
+Source. 2016–2024 come from data.gov.sg bulk annual downloads; all 45 dataset IDs are in docs/nea_dataset_manifest.json. Each is retrieved by POSTing the dataset ID to the collection endpoint https://api-open.data.gov.sg/v1/public/api/datasets/{id}/initiate-download, which returns a signed S3 URL valid for a short period; the file is then fetched from that URL. A HEAD request is rejected, so the URL must be fetched with GET.
+
+2025 – Sep 2026 is not available as a bulk download. data.gov.sg publishes annual files only through 2024, so this span was retrieved from the realtime API, one day per call:
+https://api.data.gov.sg/v1/environment/{variable}?date=YYYY-MM-DD
+with {variable} one of air-temperature, relative-humidity, rainfall, wind-speed, wind-direction. The top-up covered 638 days × 5 variables (logs/nea_api_topup.out); gaps encountered are recorded in logs/nea_api_topup_gaps.csv.
+
+R/data_processing/aggregate_nea_hourly.R aggregates all 55 resulting files to hourly × station in data/interim/.
 
 ### iii. ERA5 — reanalysis
 `raw/era5/era5_singapore_2016_2026.nc` — hourly, **1 Jan 2016 00:00 – 30 Sep 2026 23:00**,
