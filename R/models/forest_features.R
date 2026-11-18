@@ -17,20 +17,17 @@ BuildForestTargetCalendar <- function(data, horizon) {
 }
 
 # Same base predictor selection and order as R/models/lgbm.R's DROP/X0.
-ForestBasePredictors <- function(data, feature_mode) {
+ForestBasePredictors <- function(data) {
   excluded <- c("datetime", "datetime_posix", "usable",
-                grep("^(y_h|nem_h)", names(data), value = TRUE))
-  if (feature_mode == "lightgbm") {
-    excluded <- c(excluded, "temp_sq", "cdh", "t_index", "year")
-  } else excluded <- c(excluded, "y")
+                grep("^(y_h|nem_h)", names(data), value = TRUE),
+                "temp_sq", "cdh", "t_index", "year")
   setdiff(names(data), excluded)
 }
 
-BuildForestHorizonFeatures <- function(data, horizon, feature_mode) {
+BuildForestHorizonFeatures <- function(data, horizon) {
   calendar <- BuildForestTargetCalendar(data, horizon)
-  if (feature_mode != "lightgbm") return(calendar)
   if (!horizon %in% c(1L, 6L, 12L, 24L)) {
-    stop("LightGBM-aligned mode supports horizons 1, 6, 12 and 24.")
+    stop("Supported forest horizons are 1, 6, 12 and 24.")
   }
   calendar[, dow_tgt := factor(dow_tgt, levels = 0:6)]
   calendar[, dem_tgt_1w := data.table::shift(data$y, 168L - horizon)]
