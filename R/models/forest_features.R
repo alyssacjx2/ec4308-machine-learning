@@ -16,7 +16,7 @@ BuildForestTargetCalendar <- function(data, horizon) {
     workday_tgt = data.table::shift(data$is_workday, horizon, type = "lead"))
 }
 
-# Same base predictor selection and order as R/models/lgbm.R's DROP/X0.
+# Same base predictor selection and order as other models.
 ForestBasePredictors <- function(data) {
   excluded <- c("datetime", "datetime_posix", "usable",
                 grep("^(y_h|nem_h)", names(data), value = TRUE),

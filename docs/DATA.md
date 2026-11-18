@@ -87,7 +87,10 @@ cross-checked against MOM. Provenance is recorded per row in the `source` column
 - `data/processed/` is the exception worth revisiting — once the merged hourly dataset
   exists (~20–40 MB) it is small enough to commit, and it is the only thing needed to run
   models.
-- Shared raw copy: _[add Drive link]_
+- Shared raw copy: [download the raw data from Google Drive](https://drive.google.com/file/d/15NcYD_8i-TnK3pG7C_HlaN0rMO_oezHI/view?usp=sharing).
+  Extract the files into `data/raw/`, preserving the `nea/`, `ema/`, `era5/`
+  and `holidays/` subfolders shown above. The R scripts read local files;
+  they do not download this archive automatically.
 - Requires **`R.utils`** — `data.table::fread()` cannot read `.gz` without it.
 
 ## Known quirks

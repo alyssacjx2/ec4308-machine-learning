@@ -49,7 +49,7 @@ docs/
   DATA.md                    sources, coverage, conventions, known data quirks
   EC4308 Group 10 Project Proposal.pdf
 data/
-  raw/                       as downloaded (not committed)
+  raw/                       as downloaded 
   interim/                   hourly x station NEA aggregates (committed)
   processed/                 merged dataset and features.csv.gz (generated)
 output/
@@ -57,6 +57,14 @@ output/
   tables/                    comparison tables, LASSO selection frequencies
   figures/                   plots
 ```
+Download the [raw data archive from Google Drive](https://drive.google.com/file/d/15NcYD_8i-TnK3pG7C_HlaN0rMO_oezHI/view?usp=sharing)
+and extract it into `data/raw/`, preserving the `nea/`, `ema/`, `era5/` and
+`holidays/` subfolders.
+
+All commands are project-root-relative. Raw files must be supplied in the exact
+layout documented in `docs/DATA.md`; the code does not download them. In
+particular, place the yearly EMA CSV.gz files in `data/raw/ema/` (the original
+weekly spreadsheets alone are not an input accepted by the current pipeline).
 
 ## 3. Dataset and loading
 
@@ -505,10 +513,7 @@ only in their timestamps).
 - **Rebuild from raw data:** run all eight SARIMA/HW runs listed above, then
   `Rscript R/evaluation/build_sarima_hw_forecasts.R`, then the scenario script.
 
-All commands are project-root-relative. Raw files must be supplied in the exact
-layout documented in `docs/DATA.md`; the code does not download them. In
-particular, place the yearly EMA CSV.gz files in `data/raw/ema/` (the original
-weekly spreadsheets alone are not an input accepted by the current pipeline).
+
 Pin the package versions used for the final submission and retain `sessionInfo()`;
 the package installation commands alone do not guarantee identical future fits.
 

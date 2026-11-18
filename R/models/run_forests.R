@@ -7,8 +7,7 @@
 # Fixed settings: 500 trees, minimum split-node size 5, seed 4308;
 # RF mtry=floor(p/3), classical bagging mtry=p. There is no tuning.
 # Forecasts and impurity importance are collected in memory and written at the
-# end. No checkpoints, saved tree objects or automatic resume are used; every
-# invocation starts from the first refit and replaces outputs on completion.
+# end. Every invocation starts from the first refit and replaces outputs on completion.
 # Default outputs: output/forecasts/rf_bagging.csv.gz and three CSV tables in
 # output/tables/ (comparison, importance by refit, mean importance).
 # Optional RF_ settings below apply to BOTH models; RF_MAX_REFITS=0 runs all.
@@ -96,7 +95,7 @@ local({
   FitForest <- function(train, target, predictors, method) {
     p <- length(predictors)
     # Bagging considers all p predictors at every split; RF randomly offers a
-    # subset. These are chosen settings, not an OOB-selected optimum.
+    # subset. These are fixed settings, not an OOB-selected optimum.
     mtry <- if (method == "bagging") p else max(1L, as.integer(floor(p / 3)))
     # sample.fraction=1 with replacement draws n rows per tree, including repeats.
     # Variance splits reduce squared error. Node size controls splitting, not
