@@ -47,7 +47,6 @@ R/
     compare_forests.R, view_benchmarks.R, view_lgbm.R   quick result viewers
 docs/
   DATA.md                    sources, coverage, conventions, known data quirks
-  FORESTS.md                 random forest / bagging run notes (current settings: Section 4 below)
   EC4308 Group 10 Project Proposal.pdf
 data/
   raw/                       as downloaded (not committed)
@@ -434,12 +433,42 @@ Rscript R/report_figures.R                            # needs features.csv.gz; w
 The forecasts used for the results above are already in `output/forecasts/`,
 so you can skip the model scripts and go straight to evaluation.
 
-**`run_forests.R` on a fresh clone checks rather than replaces.** It restores the
-committed `rf_bagging.csv.gz` as its starting point. The importance checkpoints
-are not committed, so it refits every window and stops if any forecast differs
-from the committed one by more than 0.000001 MW. It never overwrites the
-committed forecasts. To produce new forest forecasts, move `rf_bagging.csv.gz`
-out of `output/forecasts/` first.
+### Running RF and bagging
+
+`Rscript R/models/run_forests.R` runs both models from
+`data/processed/features.csv.gz`. Their forecasts are consolidated into one file. Only run one process per output directory.
+
+| Default output | Purpose |
+|---|---|
+| `output/forecasts/rf_bagging.csv.gz` | Published paired forecasts, actuals, timestamps, predictor counts, mtry and OOB MSE |
+| `output/tables/rf_bagging_comparison.csv` | RMSE, MAE and MAPE by horizon on saved forecasts; positive RF RMSE reduction means RF beats bagging |
+| `output/tables/rf_bagging_importance_summary.csv` | Mean impurity importance across completed refits, with completion counts |
+| `output/tables/rf_bagging_importance_by_refit.csv.gz` | Feature importance for each refit, horizon and model |
+
+Forecasts and importance scores are collected in memory and written only after
+all requested fits complete. No checkpoints or fitted tree objects are saved,
+and previous forecasts are not used to resume. **Every invocation starts at the
+first refit and replaces the output files on completion.** If interrupted,
+restart the run from the beginning. The terminal reports each refit, horizon,
+mtry and elapsed time. Importance is calculated from the prediction trees;
+`RF_MAX_REFITS` limits both forecasts and importance to the requested refits.
+Use `FIXED_OUTPUT_DIR` for experiments to keep the supplied report results.
+
+`FIXED_OUTPUT_DIR` puts all four outputs in the chosen directory
+(for example, `forecasts.csv`, `comparison.csv` and `importance_summary.csv`).
+The `RF_` settings apply to both models: `HORIZONS` (comma-separated),
+`TRAIN_HOURS`, `REFIT_HOURS`, `FIRST_ORIGIN`, `LAST_TARGET`, `NUM_TREES`,
+`MIN_NODE_SIZE` and `MAX_REFITS` (0 means all refits). Horizons must be drawn
+from 1, 6, 12 and 24.
+
+To recompute just the RF/bagging comparison from the published forecasts,
+without refitting:
+
+```bash
+Rscript R/evaluation/compare_forests.R
+```
+
+### Seasonal forecast inputs
 
 **Do not commit `sarima.csv.gz` or `holt_winters.csv.gz`.** When both exist in
 `output/forecasts/`, `evaluate.R` and `dm_and_combination.R` read them instead of
